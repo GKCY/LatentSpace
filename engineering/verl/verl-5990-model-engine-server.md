@@ -2,14 +2,14 @@
 
 > PR: [verl-project/verl#5990](https://github.com/verl-project/verl/pull/5990)  
 > 标题: `[fully_async] feat: standalone log prob server (Model Engine Server) support`  
-> 状态: open，截至 2026-04-24  
+> 状态: open，截至 2026-05-13  
 > 核心问题: fully async 训练里的 `old_log_prob` 计算太重，并且卡在训练关键路径上。
 
 ---
 
 ## 1. 这条 PR 到底在做什么？
 
-#5990 引入了一个独立的 `Model Engine Server`，专门为 fully async 训练计算 `old_log_prob`。
+#5990 引入了一个独立的 `Model Engine Server`，主要为 fully async 训练计算 `old_log_prob`。
 
 它不是一个新的 RL 算法，也不是让 logprob forward 本身变得更便宜。它的核心是系统结构调整：
 
@@ -18,6 +18,12 @@
 旧方案里，`old_log_prob` 由 actor training engine 自己重算。fully async 场景下，因为训练和 rollout 使用的参数版本可能不同，trainer 经常需要保存当前参数、恢复旧参数、重算 logprob，再把当前参数恢复回来。
 
 新方案里，rollout 生成 token 后，会把 `prompt + response` 发给独立的 `Model Engine Server`。这个 server 用额外 GPU 计算 `engine_server_logprobs` 和 `entropy`，然后把结果随 batch 带回训练阶段。训练阶段看到这些字段后，直接使用，不再自己重算。
+
+当前 PR head 里，入口已经从 PR 描述里的概念性 `enable_standalone` 收敛成了 `model_engine_server.enable` 这套配置：
+
+- `enable_old_mode=True` 会启动 old policy logprob server，并把它纳入 actor 到 server 的权重同步。
+- `enable_ref_mode=True` 也有代码路径，可以启动 ref policy logprob server；不过示例脚本目前只打开了 old mode。
+- `batch_size` 和 `timeout` 控制 server 侧异步攒批。
 
 ---
 
@@ -80,22 +86,23 @@ old_log_prob 总耗时
 
 ## 3. #5990 的新路径
 
-#5990 把 `old_log_prob` 前移到 rollout 侧，用独立的 `Model Engine Server` 计算。
+#5990 把 `old_log_prob` 前移到 rollout 侧，用独立的 `Model Engine Server` 计算。当前实现把这条路径挂在 `FullyAsyncLLMServerClient.generate` 之后：每次 rollout server 生成一段新 token，client 会把这段新 token 对应的上下文发给 `ModelEngineServerManager.compute_log_probs`。
 
 新时序大致是：
 
 ```text
 rollout 生成 token
   ↓
-FullyAsyncLLMServerManager 把 prompt + response 发给 Model Engine Server
+FullyAsyncLLMServerClient 把 context + 本轮新 response 发给 ModelEngineServerManager
   ↓
-Model Engine Server 异步攒批
+ModelEngineServerManager 分发给 old/ref Model Engine Server
   ↓
-ModelEngineWorker 做 forward-only infer
+Model Engine Server 异步攒批，ModelEngineWorker 做 forward-only infer
   ↓
 返回 engine_server_logprobs / engine_server_entropys
+可选返回 ref_logprobs / ref_entropys
   ↓
-batch 带着 old_log_prob 进入训练队列
+AgentLoop postprocess 做 padding，batch 带着 old_log_prob 进入训练队列
   ↓
 训练阶段 _compute_old_log_prob 直接读取结果
   ↓
@@ -116,14 +123,17 @@ pop engine_server_logprobs from batch
 
 这就是 PR 测试中端到端加速的主要来源。
 
+验证阶段会跳过这段 server logprob 计算，因为 `generate` 里会读取 `validate` 标记，避免把验证推理也挂到 old logprob server 上。
+
 ---
 
 ## 4. 新增的几个核心组件
 
-PR 描述中把实现拆成了四个角色：
+当前实现可以拆成几个角色：
 
 | 类 | 角色 |
 |---|---|
+| `ModelEngineServerManager` | 管理 old/ref 两类 `ModelEngineReplica`，对上提供统一的 `compute_log_probs` |
 | `ModelEngineReplica` | 类似 rollout replica，负责资源分配、生命周期和权重同步 |
 | `ModelEngineWorker` | 每张 GPU 上的 Ray actor，继承 checkpoint engine worker 逻辑 |
 | `ModelEngineServerAdapter` | 把 `TrainingWorker` 包成 forward-only inference adapter |
@@ -135,7 +145,37 @@ PR 描述中把实现拆成了四个角色：
 
 ---
 
-## 5. 权重一致性问题
+## 5. 实际配置入口
+
+示例脚本 `dapo_7b_math_megatron_16_16_8.sh` 现在给出的关键配置是：
+
+```shell
+model_engine_server.enable=True
+model_engine_server.enable_old_mode=True
+model_engine_server.nnodes="${NNODES_LOG_PROB}"
+model_engine_server.n_gpus_per_node="${NGPUS_PER_NODE}"
+model_engine_server.use_dynamic_bsz=${use_dynamic_bsz}
+model_engine_server.megatron.pipeline_model_parallel_size=1
+model_engine_server.megatron.tensor_model_parallel_size=1
+model_engine_server.batch_size=64
+model_engine_server.timeout=5
+```
+
+对应的默认配置文件还保留了 `enable_ref_mode=False`，说明这套 `ModelEngineServer` 已经被设计成不只服务 old policy logprob；只是 #5990 的主路径和性能数字仍然围绕 old logprob 展开。
+
+另外要注意，`fully_async_ppo_megatron_trainer.yaml` 的基础配置里仍然写着：
+
+```yaml
+actor_rollout_ref.rollout.calculate_log_probs: True
+actor_rollout_ref.actor.use_rollout_log_probs: True
+algorithm.rollout_correction.bypass_mode: True
+```
+
+示例脚本里又覆盖成 `algorithm.rollout_correction.bypass_mode=False`。这意味着默认配置、实验脚本和最终推荐用法还没有完全收敛，blog 里最好把它解释成“PR 当前代码路径/实验脚本的配置组合”，不要写成已经稳定沉淀的用户 API。
+
+---
+
+## 6. 权重一致性问题
 
 独立 logprob server 最大的正确性风险是：权重更新期间，不能让同一个 batch 的 logprob 混用新旧权重。
 
@@ -163,7 +203,7 @@ wake_up:
 
 ---
 
-## 6. 测试收益主要来自哪里？
+## 7. 测试收益主要来自哪里？
 
 PR 描述里给出的结论是：
 
@@ -198,7 +238,7 @@ PR 描述里给出的结论是：
 
 ---
 
-## 7. 什么是资源归一化收益？
+## 8. 什么是资源归一化收益？
 
 资源归一化收益是在问：
 
@@ -255,13 +295,13 @@ GPU 数量放大倍数是：
 
 ---
 
-## 8. 额外 GPU 的空泡问题
+## 9. 额外 GPU 的空泡问题
 
 这个方案的明显弱点是：额外用于 logprob server 的 GPU 平均利用率未必高。
 
 原因很直接：
 
-- 它只负责 `old_log_prob` forward。
+- 示例路径只负责 `old_log_prob` forward；即便打开 ref mode，本质上也还是 logprob inference。
 - 请求流可能是 bursty 的。
 - batch 可能攒不满。
 - 权重同步期间需要 pause/drain。
@@ -289,13 +329,13 @@ GPU 数量放大倍数是：
 
 ---
 
-## 9. 可能的后续优化方向
+## 10. 可能的后续优化方向
 
 如果沿着这个方向继续做，关键不是再加更多 logprob GPU，而是提高这组 GPU 的复用率和弹性。
 
 可能的演进方向：
 
-- 让同一组 inference GPU 同时承担 `old_log_prob`、`ref_log_prob`、验证推理等任务。
+- 当前代码已有 `enable_ref_mode` 的雏形，但 old/ref 是否应该是两个 manager、两组 replica，还是更统一的资源池，还在 review 讨论里。
 - 根据请求流量动态调整 `batch_size` 和 `timeout`。
 - 让 logprob server 支持 autoscaling，而不是固定常驻 `8` 张 GPU。
 - 与 rollout server 或其他 inference worker 做资源池复用。
@@ -313,6 +353,20 @@ GPU 数量放大倍数是：
 
 ---
 
-## 10. 一句话总结
+## 11. 截至 2026-05-13 的状态
 
-> #5990 的本质是把 fully async 训练中昂贵且串行的 `old_log_prob` 计算，从 actor 训练引擎里拆出来，放到独立 GPU 服务上并发执行。它的收益主要来自缩短训练关键路径和减少权重 save/restore，而不是让 logprob forward 本身更便宜。代价是额外 GPU 可能有明显空泡，因此它适合 GPU 相对充足、wall-clock 更重要的训练场景。
+这篇分析可以继续保留主判断，但需要把“实现状态”写得更谨慎：
+
+- PR 仍是 open，且没有直接更新 `docs/` 或 blog。
+- 5 月 12 日的 review 还在追 `device api`、old/ref manager 结构、FSDP 实现等问题。
+- 当前示例只展示 Megatron + mbridge + old mode，不能写成 FSDP 或通用 backend 已支持。
+- `ModelEngineServerManager` 已经有 old/ref 双实例的代码路径，但 review 里仍在质疑 old/ref manager 的组织方式。
+- mbridge 侧仍依赖配套 PR，相关文档可能需要单独补。
+
+所以 #5990 更适合被描述成“fully_async 里把 old logprob 从训练关键路径拆出去的系统方案和进行中的实现”，而不是已经完全落地的稳定 feature。
+
+---
+
+## 12. 一句话总结
+
+> #5990 的本质是把 fully async 训练中昂贵且串行的 `old_log_prob` 计算，从 actor 训练引擎里拆出来，放到独立 GPU 服务上并发执行。它的收益主要来自缩短训练关键路径和减少权重 save/restore，而不是让 logprob forward 本身更便宜。当前 PR 已经加入 `ModelEngineServerManager` 和 old/ref mode 的配置雏形，但示例和性能数字仍主要围绕 Megatron old logprob server；代价是额外 GPU 可能有明显空泡，因此它适合 GPU 相对充足、wall-clock 更重要的训练场景。
