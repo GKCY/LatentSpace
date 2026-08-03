@@ -4,21 +4,21 @@
     "type": "split",
     "children": [
       {
-        "id": "5c22f3154aaa23d1",
+        "id": "4bd206d2ce519c60",
         "type": "tabs",
         "children": [
           {
-            "id": "29668943fb426dde",
+            "id": "b35935a20efbc2b8",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "engineering/verl/verl-5990-model-engine-server.md",
+                "file": "foundations/RL/框架/权重同步/veRL增量权重同步方案.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "verl-5990-model-engine-server"
+              "title": "veRL增量权重同步方案"
             }
           }
         ]
@@ -78,7 +78,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 277.5
+    "width": 286.5
   },
   "right": {
     "id": "22d0e412d8209128",
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "engineering/verl/verl-5990-model-engine-server.md",
+                "file": "foundations/RL/Trainning-Inference Mismatch.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "verl-5990-model-engine-server 的反向链接列表"
+              "title": "Trainning-Inference Mismatch 的反向链接列表"
             }
           },
           {
@@ -156,21 +156,21 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "engineering/verl/verl-5990-model-engine-server.md",
+                "file": "foundations/RL/框架/权重同步/veRL增量权重同步方案.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "verl-5990-model-engine-server 的大纲"
+              "title": "veRL增量权重同步方案 的大纲"
             }
           }
-        ]
+        ],
+        "currentTab": 4
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 354.5
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -183,17 +183,40 @@
       "bases:新建数据库": false
     }
   },
-  "active": "29668943fb426dde",
+  "active": "5fb57e45c05062d6",
   "lastOpenFiles": [
-    "foundations/RL/GRPO.md",
-    "paper_reading/ThunderAgent.md",
-    "engineering/verl/verl-5990-model-engine-server.md",
+    "foundations/分布式训练",
+    "foundations/RL/框架/训推一致性/Trainning-Inference Mismatch.md",
+    "foundations/RL/框架/权重同步/veRL增量权重同步方案.md",
+    "foundations/RL/框架/权重同步/主要RL框架重同步方案.md",
+    "foundations/RL/框架/轨迹管理/轨迹管理相关工作汇总.md",
+    "foundations/RL/框架/轨迹管理/什么是TITO.md",
+    "foundations/RL/框架/轨迹管理/Slime轨迹管理.md",
+    "foundations/RL/框架/轨迹管理/Uni-Agent轨迹管理.md",
+    "foundations/RL/异步/Partial Rollout.md",
+    "foundations/RL/框架/训推一致性",
+    "foundations/RL/Weight Refit.md",
+    "foundations/RL/环境",
+    "foundations/RL Infra.md",
     "engineering/verl/verl-6091-large-weight-chunk-transfer.md",
-    "engineering/verl",
+    "engineering/verl/verl-ray-ppo-trainer.md",
+    "engineering/verl/verl-5990-model-engine-server.md",
+    "paper_reading/ThunderAgent.md",
+    "foundations/RL/框架/数据流",
+    "foundations/RL/框架/权重同步",
+    "foundations/RL/算法/PPO.md",
+    "foundations/RL/算法/GRPO.md",
+    "foundations/RL/RL能否拓宽LLM的能力边界？.md",
+    "foundations/RL/异步",
+    "foundations/RL/未命名.md",
+    "foundations/模型/Chat Template特点.md",
+    "foundations/模型",
+    "foundations/RL/框架/轨迹管理",
+    "foundations/RL/框架",
+    "foundations/RL/算法",
+    "model arch",
     "未命名.canvas",
-    "未命名.base",
     "2026-04-23.md",
-    "未命名 1.base",
     "GEMINI.md"
   ]
 }
