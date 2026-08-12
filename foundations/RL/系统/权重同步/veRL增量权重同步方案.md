@@ -6,7 +6,7 @@
 
 verl 在 2026 年 7～8 月合入的 `delta_sharded` 系列把这条链路改造成了稀疏增量协议。它不发送数值差 `W_new - W_old`，而是发送“发生变化的位置 + 该位置的新值”，接收端按位置覆盖。因此它没有阈值截断和累加漂移，目标是与同 dtype 的全量权重同步 bit-exact。
 
-本文聚焦这套方案的设计与当前实现，而不是重复比较不同 RL 框架。框架横向比较可参见同目录的[《异步 RL 中的权重同步：16 个开源框架的传输与中断方案》](./主要RL框架重同步方案.md)。
+本文聚焦这套方案的设计与当前实现，而不是重复比较不同 RL 框架。框架横向比较可参见同目录的[《异步 RL 中的权重同步：16 个开源框架的传输与中断方案》](主要RL框架重同步方案.md)。
 
 资料口径固定为 **2026 年 8 月 3 日**，代码基线为当天 verl `main` 的 commit [`8bda4220`](https://github.com/verl-project/verl/commit/8bda42207cc08a947a49587d38315647740b9e14)。仓库中的 [`docs/advance/delta_weight_sync.md`](https://github.com/verl-project/verl/blob/8bda42207cc08a947a49587d38315647740b9e14/docs/advance/delta_weight_sync.md) 部分段落仍停留在 Megatron 支持合入之前，因此本文以固定 commit 的代码和已合入 PR 为准。文中的性能数字来自 PR 作者在指定模型、硬件和拓扑上的报告，不是本文独立复现的统一 benchmark。
 

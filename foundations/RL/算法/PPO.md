@@ -807,7 +807,7 @@ returns
 
 如果希望继续沿着工程代码阅读，可以参考：
 
-- [[engineering/verl/verl-ray-ppo-trainer|verl：读懂 ray_trainer.py 里的 PPO 训练主线]]
+- [[verl-ray-ppo-trainer|verl：读懂 ray_trainer.py 里的 PPO 训练主线]]
 
 ---
 
