@@ -395,7 +395,7 @@ FSDP 省下显存的代价是参数 all-gather。以 ring collective 的粗略�
 
 FSDP 的目标首先是让更大的模型或 batch 能跑起来，不保证在模型本来就轻松放得下时比 DDP 更快。实际性能取决于层大小、网络拓扑、batch、计算强度、wrap 边界和通信能否被计算覆盖。
 
-### 5.2 一个粗略的通信量账本
+ ### 5.2 一个粗略的通信量账本
 
 设某个参数组有 $Q$ bytes，采用 ring collective，并只计算大 tensor 的理论 payload。按每个 rank 的单向发送量计算（接收量同量），一次 all-gather 或 reduce-scatter 大约是：
 
