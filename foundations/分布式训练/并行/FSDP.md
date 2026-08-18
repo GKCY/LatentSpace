@@ -393,11 +393,13 @@ FSDP 省下显存的代价是参数 all-gather。以 ring collective 的粗略�
 - 完整 reshard 的 FSDP 单元通常有 forward all-gather、backward all-gather、gradient reduce-scatter；
 - 不 reshard 则可少一次参数 all-gather，但多占显存。
 
-FSDP 的目标首先是让更大的模型或 batch 能跑起来，不保证在模型本来就轻松放得下时比 DDP 更快。实际性能取决于层大小、网络拓扑、batch、计算强度、wrap 边界和通信能否被计算覆盖。
+FSDP 的目标首先是让更大的模型或 batch 能跑起来，不保证在模型本来就轻松放得下时比 DDP 更快。实际性能取决于层大小、网络拓扑、batch、计算强度、FSDP 分组边界和通信能否被计算覆盖。
 
  ### 5.2 一个粗略的通信量账本
 
-设某个参数组有 $Q$ bytes，采用 ring collective，并只计算大 tensor 的理论 payload。按每个 rank 的单向发送量计算（接收量同量），一次 all-gather 或 reduce-scatter 大约是：
+设某个参数组有 $Q$ bytes，$N$ 是参与这次 collective 的 **rank 数量**，也就是相应 process group 的大小。对纯 FSDP，若所有 rank 都属于同一个分片组，通常有 $N=\text{WORLD\_SIZE}$；对 HSDP 或其他子组通信，$N$ 只等于当前分片组的大小，不一定等于训练使用的总 GPU 数。例如，64 张 GPU 按每 8 张组成一个 FSDP 分片组时，这里的 $N=8$，而不是 64。
+
+采用 ring collective，并只计算大 tensor 的理论 payload。按每个 rank 的单向发送量计算（接收量同量），一次 all-gather 或 reduce-scatter 大约是：
 
 $$
 \frac{N-1}{N}Q
@@ -423,9 +425,11 @@ $$
 
 ---
 
-## 6. Wrap 边界为什么决定成败？
+## 6. FSDP 分组边界（wrap boundary）为什么决定成败？
 
-FSDP 不会神奇地逐个算子猜出最佳通信边界。每次调用 `fully_shard(module)`，都会创建一个参数通信组：该模块中尚未被更内层 `fully_shard` 管理的参数会被归到一起。每次 unshard 这组参数时使用一个 all-gather collective，backward 梯度使用一个 reduce-scatter collective；若 forward 后 reshard，同一迭代会分别在 forward 和 backward 前 unshard，因此会有两次参数 all-gather。
+这里的 **wrap** 是“把哪些模块交给一个 FSDP 单元管理”的意思，不是 CUDA 中由 32 个线程组成的 **warp**。在 FSDP2 中，可以直接把它理解成：**每次 `fully_shard(module)` 应该圈住哪些参数**。这个圈选范围的边缘就是 FSDP 分组边界，它决定一次 all-gather 和 reduce-scatter 要处理多大一组参数。
+
+FSDP 不会神奇地逐个算子猜出最佳分组。每次调用 `fully_shard(module)`，都会创建一个参数通信组：该模块中尚未被更内层 `fully_shard` 管理的参数会被归到一起。每次 unshard 这组参数时使用一个 all-gather collective，backward 梯度使用一个 reduce-scatter collective；若 forward 后 reshard，同一迭代会分别在 forward 和 backward 前 unshard，因此会有两次参数 all-gather。
 
 ### 6.1 只 shard 最外层为什么不好？
 
@@ -1056,7 +1060,7 @@ fully_shard(
 - 主机内存占用；
 - pinned memory 压力。
 
-所以 CPU offload 更像“模型否则根本跑不起来”的容量手段，而不是默认性能优化。先尝试合理 wrap、BF16 和 activation checkpointing，再评估是否值得 offload。
+所以 CPU offload 更像“模型否则根本跑不起来”的容量手段，而不是默认性能优化。先尝试合理的 FSDP 分组、BF16 和 activation checkpointing，再评估是否值得 offload。
 
 ---
 
@@ -1158,7 +1162,7 @@ reserved = torch.cuda.max_memory_reserved() / 1024**3
 4. 启用 BF16 mixed precision；
 5. activation OOM 时加 activation checkpointing；
 6. 用 profiler 找暴露的 all-gather/reduce-scatter；
-7. 再调 wrap、reshard、prefetch；
+7. 再调 FSDP 分组、reshard、prefetch；
 8. 跨节点通信成为瓶颈时评估 HSDP 或 TP + FSDP；
 9. 容量仍不够且能接受吞吐损失时再考虑 CPU offload。
 
@@ -1237,7 +1241,7 @@ torchrun --standalone --nproc-per-node=2 fsdp_minimal.py
 
 - 模型太小，本来就更适合 DDP；
 - root-only 导致大块阻塞 all-gather；
-- wrap 太细，collective 启动延迟过多；
+- FSDP 分组太细，collective 启动延迟过多；
 - 本地 batch 太小，没有足够计算掩盖通信；
 - 跨节点带宽不足，纯 FSDP shard group 过大；
 - activation checkpointing 重算成本太高；
@@ -1316,7 +1320,7 @@ FSDP 计算当前单元时仍要临时还原它。单层本身放不下时需要
 
 只有 rank 0 **写最终文件**可以，但构造 FSDP 完整 state dict 的 collective 必须由所有相关 rank 一起执行。训练恢复更推荐所有 rank 参与 DCP 分片保存。
 
-### 误解七：显存下降说明 wrap 配置正确
+### 误解七：显存下降说明 FSDP 分组配置正确
 
 还要看峰值发生位置、tokens/s、通信暴露比例和收敛是否对齐。一个配置可以省显存，却因为 root-only、小 collective 或跨节点 all-gather 而极慢。
 
