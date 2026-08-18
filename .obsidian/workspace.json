@@ -13,15 +13,44 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "foundations/分布式训练/并行/FSDP.md",
+                "file": "foundations/RL/框架PR分析/veRL/verl-ray-ppo-trainer.md",
+                "mode": "preview",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "verl-ray-ppo-trainer"
+            }
+          },
+          {
+            "id": "a4881f48f22c3583",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "foundations/RL/框架PR分析/veRL/verl-6091-large-weight-chunk-transfer.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "FSDP"
+              "title": "verl-6091-large-weight-chunk-transfer"
+            }
+          },
+          {
+            "id": "05e67909a95bf17c",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "foundations/Benchamark/deep-swe-task-and-benchmark-pipeline.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "deep-swe-task-and-benchmark-pipeline"
             }
           }
-        ]
+        ],
+        "currentTab": 2
       }
     ],
     "direction": "vertical"
@@ -41,9 +70,7 @@
               "type": "file-explorer",
               "state": {
                 "sortOrder": "alphabetical",
-                "autoReveal": false,
-                "showSearch": false,
-                "searchQuery": ""
+                "autoReveal": false
               },
               "icon": "lucide-folder-closed",
               "title": "文件列表"
@@ -80,7 +107,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 270.8333435058594
+    "width": 276.5
   },
   "right": {
     "id": "22d0e412d8209128",
@@ -158,13 +185,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "foundations/分布式训练/并行/FSDP.md",
+                "file": "foundations/Benchamark/deep-swe-task-and-benchmark-pipeline.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "大纲"
+              "title": "deep-swe-task-and-benchmark-pipeline 的大纲"
             }
           }
         ],
@@ -185,44 +212,44 @@
       "bases:新建数据库": false
     }
   },
-  "active": "b35935a20efbc2b8",
+  "active": "05e67909a95bf17c",
   "lastOpenFiles": [
-    "foundations/分布式训练/通信/原语.md",
-    "foundations/模型/Chat Template特点.md",
-    "foundations/RL/框架PR分析/veRL/verl-6091-large-weight-chunk-transfer.md",
-    "foundations/分布式训练/并行/FSDP.md",
-    "foundations/RL/系统/权重同步/veRL全量权重同步机制.md",
-    "foundations/RL/系统/权重同步/veRL增量权重同步方案.md",
     "foundations/RL/系统/权重同步/主要RL框架重同步方案.md",
-    "foundations/RL/系统/轨迹管理/轨迹管理相关工作汇总.md",
-    "foundations/RL/系统/轨迹管理/Slime轨迹管理.md",
-    "foundations/RL/系统/轨迹管理/什么是TITO.md",
-    "foundations/RL/算法/PPO.md",
+    "foundations/Benchamark/deep-swe-task-and-benchmark-pipeline.md",
     "foundations/RL/RL能否拓宽LLM的能力边界？.md",
+    "foundations/分布式训练/并行/FSDP.md",
+    "foundations/分布式训练/通信/原语.md",
+    "benchmark",
+    "foundations/Benchamark",
     "foundations/RL/系统/训练稳定性/精度/梯度计算/终止样本处理.md",
-    "foundations/RL/算法/GRPO.md",
-    "foundations/RL/框架PR分析/veRL/verl-ray-ppo-trainer.md",
-    "foundations/RL/框架PR分析/veRL/verl-5990-model-engine-server.md",
-    "foundations/分布式训练/并行",
     "foundations/分布式训练/通信",
+    "foundations/分布式训练/并行",
+    "foundations/RL/系统/权重同步/veRL全量权重同步机制.md",
     "foundations/RL/系统/训练稳定性/精度",
     "foundations/RL/系统/训练稳定性/精度/训推一致性/Trainning-Inference Mismatch.md",
     "foundations/RL/系统/训练稳定性/精度/梯度计算",
+    "foundations/RL/框架PR分析/veRL/verl-ray-ppo-trainer.md",
     "foundations/RL/系统/训练稳定性",
+    "foundations/RL/框架PR分析/veRL/verl-6091-large-weight-chunk-transfer.md",
+    "foundations/RL/框架PR分析/veRL/verl-5990-model-engine-server.md",
+    "foundations/RL/系统/权重同步/veRL增量权重同步方案.md",
     "foundations/RL/框架/未命名",
     "foundations/RL/框架/未命名.md",
     "foundations/RL/框架PR分析/veRL",
     "foundations/RL/框架PR分析/Slime",
-    "foundations/RL/框架PR分析",
-    "foundations/分布式训练",
+    "foundations/RL/系统/轨迹管理/Slime轨迹管理.md",
+    "foundations/RL/系统/轨迹管理/轨迹管理相关工作汇总.md",
+    "foundations/分布式训练/FSDP.md",
+    "foundations/RL/系统/轨迹管理/什么是TITO.md",
     "foundations/RL/系统/轨迹管理/Uni-Agent轨迹管理.md",
     "foundations/RL/异步/Partial Rollout.md",
     "foundations/RL/Weight Refit.md",
     "foundations/RL Infra.md",
     "paper_reading/ThunderAgent.md",
+    "foundations/RL/算法/PPO.md",
+    "foundations/RL/算法/GRPO.md",
     "foundations/RL/未命名.md",
-    "未命名.canvas",
-    "2026-04-23.md",
-    "GEMINI.md"
+    "foundations/模型/Chat Template特点.md",
+    "未命名.canvas"
   ]
 }
