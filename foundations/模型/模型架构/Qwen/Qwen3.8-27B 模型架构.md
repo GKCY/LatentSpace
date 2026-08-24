@@ -132,6 +132,8 @@ Qwen3.8-27B 的每个 Gated DeltaNet 层有 16 个 Q/K head 和 48 个 V head，
 
 这 48 层的优势是：单 token recurrent decode 不必让状态随上下文长度增长，prefill 也可以使用 chunkwise 算法并行计算。代价则是，固定状态毕竟是对历史的压缩，不如完整 attention 擅长逐 token 的精确回看。
 
+关于线性注意力、Delta Rule、遗忘门与 chunkwise parallel 的完整推导，可继续阅读 [[Gated DeltaNet]]。
+
 ### 3.2 每四层一次全局注意力：给压缩记忆加“校准点”
 
 Qwen 没有把整个模型都换成线性注意力，而是在每个四层周期的第 4 层保留一次真正的 causal global attention。这里不是 sliding window，也不是 local attention：16 层都可以看见此前完整上下文。
