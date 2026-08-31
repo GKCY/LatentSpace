@@ -1,0 +1,38 @@
+@use "./variables.scss" as *;
+
+// Keep dense technical material comfortable and independently scrollable.
+article p,
+article li {
+  line-height: 1.75;
+}
+
+.table-container,
+pre,
+.katex-display {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-container > table {
+  margin-inline: 0;
+}
+
+.katex-display {
+  display: block;
+}
+
+article :not(pre) > code {
+  overflow-wrap: anywhere;
+}
+
+@media all and ($mobile) {
+  .page article > h1 {
+    font-size: 1.7rem;
+    line-height: 1.35;
+  }
+
+  article h2,
+  article h3 {
+    line-height: 1.4;
+  }
+}

@@ -2,6 +2,16 @@
 .DS_Store
 
 # Obsidian local UI state and cache
-.obsidian/workspace.json
-.obsidian/workspace-mobile.json
-.obsidian/cache/
+content/.obsidian/workspace.json
+content/.obsidian/workspace-mobile.json
+content/.obsidian/cache/
+
+# Quartz dependencies and generated output
+node_modules/
+public/
+prof/
+tsconfig.tsbuildinfo
+.quartz-cache/
+.quartz/
+.turbo/
+quartz/cli/tui/dist/
