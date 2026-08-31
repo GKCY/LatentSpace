@@ -1,0 +1,194 @@
+@use "../../styles/variables.scss" as *;
+
+.mobile-toc {
+  display: none;
+}
+
+html.mobile-toc-open,
+html.mobile-toc-open body {
+  overflow: hidden;
+}
+
+@media all and not ($desktop) {
+  .mobile-toc {
+    display: contents;
+  }
+
+  .mobile-toc-trigger {
+    position: fixed;
+    right: calc(1rem + env(safe-area-inset-right, 0px));
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    z-index: 998;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 44px;
+    padding: 0.65rem 0.9rem;
+    border: 1px solid var(--lightgray);
+    border-radius: 999px;
+    background: var(--secondary);
+    color: var(--light);
+    box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 18%);
+    font: 600 0.9rem/1 var(--bodyFont);
+    cursor: pointer;
+    transition:
+      opacity 0.2s ease,
+      transform 0.2s ease;
+  }
+
+  .mobile-toc-trigger:hover,
+  .mobile-toc-trigger:focus-visible {
+    background: var(--tertiary);
+    transform: translateY(-2px);
+  }
+
+  .mobile-toc-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    visibility: hidden;
+    padding: 0;
+    border: 0;
+    background: rgb(0 0 0 / 42%);
+    opacity: 0;
+    cursor: default;
+    transition:
+      opacity 0.25s ease,
+      visibility 0s linear 0.25s;
+  }
+
+  .mobile-toc-panel {
+    position: fixed;
+    left: 50%;
+    bottom: 0;
+    z-index: 1000;
+    display: flex;
+    visibility: hidden;
+    flex-direction: column;
+    width: min(100%, 36rem);
+    max-height: 82vh;
+    max-height: 82dvh;
+    margin: 0;
+    padding: 0 0 env(safe-area-inset-bottom, 0px);
+    border: 1px solid var(--lightgray);
+    border-bottom: 0;
+    border-radius: 1rem 1rem 0 0;
+    background: var(--light);
+    color: var(--darkgray);
+    box-shadow: 0 -0.75rem 2.5rem rgb(0 0 0 / 20%);
+    transform: translate(-50%, calc(100% + 2rem));
+    transition:
+      transform 0.25s ease,
+      visibility 0s linear 0.25s;
+  }
+
+  .mobile-toc-panel-header {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1rem 0.7rem;
+    border-bottom: 1px solid var(--lightgray);
+  }
+
+  .mobile-toc-panel-header h2 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .mobile-toc-close {
+    display: inline-grid;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--darkgray);
+    cursor: pointer;
+    place-items: center;
+  }
+
+  .mobile-toc-close:hover,
+  .mobile-toc-close:focus-visible {
+    background: var(--highlight);
+    color: var(--secondary);
+  }
+
+  .mobile-toc-panel-content {
+    min-height: 0;
+    padding: 0.55rem 0.65rem 0.8rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-toc-panel-content ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .mobile-toc-panel-content li {
+    margin: 0;
+  }
+
+  .mobile-toc-panel-content li.depth-1 {
+    padding-left: 0.8rem;
+  }
+
+  .mobile-toc-panel-content li.depth-2 {
+    padding-left: 1.6rem;
+  }
+
+  .mobile-toc-panel-content li.depth-3,
+  .mobile-toc-panel-content li.depth-4,
+  .mobile-toc-panel-content li.depth-5,
+  .mobile-toc-panel-content li.depth-6 {
+    padding-left: 2.4rem;
+  }
+
+  .mobile-toc-panel-content a {
+    display: block;
+    padding: 0.55rem 0.65rem;
+    border-radius: 0.45rem;
+    color: var(--darkgray);
+    font-size: 0.95rem;
+    line-height: 1.4;
+  }
+
+  .mobile-toc-panel-content a:hover,
+  .mobile-toc-panel-content a:focus-visible,
+  .mobile-toc-panel-content a.is-active {
+    background: var(--highlight);
+    color: var(--secondary);
+  }
+
+  .mobile-toc.is-open .mobile-toc-trigger {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(0.5rem);
+  }
+
+  .mobile-toc.is-open .mobile-toc-backdrop,
+  .mobile-toc.is-open .mobile-toc-panel {
+    visibility: visible;
+    transition-delay: 0s;
+  }
+
+  .mobile-toc.is-open .mobile-toc-backdrop {
+    opacity: 1;
+  }
+
+  .mobile-toc.is-open .mobile-toc-panel {
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-toc-trigger,
+  .mobile-toc-backdrop,
+  .mobile-toc-panel {
+    transition-duration: 0.01ms;
+  }
+}

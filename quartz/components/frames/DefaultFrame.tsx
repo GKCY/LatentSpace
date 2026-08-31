@@ -1,7 +1,9 @@
 import { PageFrame, PageFrameProps } from "./types"
 import HeaderConstructor from "../Header"
+import MobileTableOfContentsConstructor from "../MobileTableOfContents"
 
 const Header = HeaderConstructor()
+const MobileTableOfContents = MobileTableOfContentsConstructor()
 
 /**
  * The default page frame — three-column layout with left sidebar, center
@@ -11,6 +13,7 @@ const Header = HeaderConstructor()
  */
 export const DefaultFrame: PageFrame = {
   name: "default",
+  components: [MobileTableOfContents],
   render({
     componentData,
     header,
@@ -54,6 +57,7 @@ export const DefaultFrame: PageFrame = {
             <BodyComponent {...componentData} />
           ))}
         </div>
+        <MobileTableOfContents {...componentData} />
         {footer.map((FooterComponent) => (
           <FooterComponent {...componentData} />
         ))}

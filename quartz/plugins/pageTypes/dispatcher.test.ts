@@ -3,6 +3,7 @@ import assert from "node:assert"
 import { collectComponents, resolveLayout } from "./dispatcher"
 import { QuartzPageTypePluginInstance } from "../types"
 import { QuartzComponent } from "../../components/types"
+import { frameRegistry } from "../../components/frames"
 
 const StubA: QuartzComponent = (() => null) as unknown as QuartzComponent
 const StubB: QuartzComponent = (() => null) as unknown as QuartzComponent
@@ -140,5 +141,23 @@ describe("collectComponents", () => {
 
     const result = collectComponents(pageTypes, sharedDefaults, byPageType)
     assert.ok(result.every((component) => component))
+  })
+
+  test("collects components rendered directly by a page frame", () => {
+    const FrameComponent: QuartzComponent = (() => null) as unknown as QuartzComponent
+    frameRegistry.register(
+      "frame-with-components",
+      {
+        name: "frame-with-components",
+        components: [FrameComponent],
+        render: () => null as any,
+      },
+      "dispatcher-test",
+    )
+
+    const pageTypes = [makePageType({ frame: "frame-with-components" })]
+    const result = collectComponents(pageTypes, { head: StubHead }, {})
+
+    assert.ok(result.includes(FrameComponent))
   })
 })

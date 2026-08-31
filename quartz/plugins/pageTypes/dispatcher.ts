@@ -10,6 +10,7 @@ import { StaticResources } from "../../util/resources"
 import { render } from "preact-render-to-string"
 import { fromHtml } from "hast-util-from-html"
 import { Root as HtmlRoot } from "hast"
+import { resolveFrame } from "../../components/frames"
 
 function getPageTypes(ctx: BuildCtx): QuartzPageTypePluginInstance[] {
   return (ctx.cfg.plugins.pageTypes ?? []) as unknown as QuartzPageTypePluginInstance[]
@@ -46,6 +47,7 @@ export function collectComponents(
   const seen = new Set<QuartzComponent>()
   for (const pt of pageTypes) {
     const layout = resolveLayout(pt, sharedDefaults, byPageType)
+    const frameComponents = resolveFrame(layout.frame).components ?? []
     const all = [
       layout.head,
       ...layout.header,
@@ -55,6 +57,7 @@ export function collectComponents(
       ...layout.left,
       ...layout.right,
       ...layout.footer,
+      ...frameComponents,
     ]
     for (const c of all) {
       if (c) seen.add(c)

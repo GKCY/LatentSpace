@@ -1,4 +1,5 @@
 @use "./variables.scss" as *;
+@use "../components/styles/mobileTableOfContents.scss";
 
 // Keep dense technical material comfortable and independently scrollable.
 article p,
@@ -23,6 +24,36 @@ pre,
 
 article :not(pre) > code {
   overflow-wrap: anywhere;
+}
+
+// Give long-form notes a persistent, readable outline on wide screens.
+@media all and ($desktop) {
+  .sidebar.right > .toc {
+    flex: 1 1 16rem;
+    min-height: 10rem;
+    max-height: 58vh;
+  }
+
+  .sidebar.right > .toc .toc-header {
+    flex: 0 0 auto;
+    padding-bottom: 0.35rem;
+  }
+
+  .sidebar.right > .toc .toc-content a {
+    display: block;
+    padding: 0.25rem 0.35rem;
+    border-radius: 0.35rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+
+  .sidebar.right > .toc .toc-content a:hover,
+  .sidebar.right > .toc .toc-content a:focus-visible,
+  .sidebar.right > .toc .toc-content a.is-active {
+    background: var(--highlight);
+    color: var(--secondary);
+    opacity: 1;
+  }
 }
 
 @media all and ($mobile) {

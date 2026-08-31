@@ -36,6 +36,8 @@ export interface PageFrameProps {
 export interface PageFrame {
   /** Unique name for this frame (e.g. "default", "full-width", "minimal") */
   name: string
+  /** Components rendered by the frame itself whose CSS and scripts must be emitted. */
+  components?: QuartzComponent[]
   /** Render the inner page structure. Returns a JSX tree to be placed inside Body > #quartz-body. */
   render: (props: PageFrameProps) => JSX.Element
   /** Optional CSS string to include when this frame is active */

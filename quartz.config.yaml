@@ -91,19 +91,21 @@ plugins:
     enabled: true
     order: 40
 
-  # A collapsed outline above the article remains reachable on small screens.
+  # Keep the native outline visible in the sticky desktop sidebar. The default
+  # frame renders the same heading data as a floating drawer below 1200px.
   - source: "@quartz-community/table-of-contents"
     enabled: true
     options:
       maxDepth: 3
-      minEntries: 2
+      # The plugin uses a strict threshold, so 1 displays a TOC from 2 headings.
+      minEntries: 1
       showByDefault: true
-      collapseByDefault: true
+      collapseByDefault: false
       layout: modern
     order: 50
     layout:
-      position: beforeBody
-      priority: 10
+      position: right
+      priority: 5
       condition: has-toc
 
   - source: "@quartz-community/crawl-links"
