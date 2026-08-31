@@ -267,6 +267,8 @@ $$
 
 但 checkpoint 带有 MTP 权重，不等于普通 `generate()` 会自动一次吐出多个 token。标准自回归路径仍然逐 token 解码，只有显式支持并启用该 draft head 的推理后端，才可能把它转化成加速；加速比还取决于接受率、batch、上下文和 kernel，不能从“有 MTP”直接推出一个固定倍数。
 
+关于多预测距离的目标函数、并行 head 与顺序 module 的区别，以及 MTP 如何通过 speculative decoding 转化为推理加速，可继续阅读 [[MTP]]。
+
 同样，默认 `thinking mode`、`reasoning_effort=xhigh/medium/low` 和 `preserve_thinking` 主要是后训练与 chat template/API 层面的能力，不是 Decoder 内多出三档“推理层”。`preserve_thinking` 会把历史 `reasoning block` 保留在多轮上下文中，有助于任务连续性和 prefix/KV 复用，但也会真实占用上下文窗口。
 
 ## 9. Qwen3.8 相比 Qwen3.5 / Qwen3.6，架构到底改了什么
