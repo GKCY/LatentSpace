@@ -12,10 +12,10 @@
     "url": "https://github.com/GKCY/LatentSpace.git"
   },
   "scripts": {
-    "quartz": "./quartz/bootstrap-cli.mjs",
-    "dev": "./quartz/bootstrap-cli.mjs build --serve",
-    "build": "./quartz/bootstrap-cli.mjs build",
-    "plugins": "./quartz/bootstrap-cli.mjs plugin install --from-config",
+    "quartz": "node --no-deprecation ./quartz/bootstrap-cli.mjs",
+    "dev": "node --no-deprecation ./quartz/bootstrap-cli.mjs build --serve",
+    "build": "node --no-deprecation ./quartz/bootstrap-cli.mjs build",
+    "plugins": "node --no-deprecation ./quartz/bootstrap-cli.mjs plugin install --from-config",
     "check": "tsc --noEmit && npx prettier . --check",
     "format": "npx prettier . --write",
     "test": "tsx --test",
