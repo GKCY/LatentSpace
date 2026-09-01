@@ -26,6 +26,17 @@ article :not(pre) > code {
   overflow-wrap: anywhere;
 }
 
+// Keep long article titles compact in the Explorer without flattening its hierarchy.
+.explorer-content .nav-file-title {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 // Give long-form notes a persistent, readable outline on wide screens.
 @media all and ($desktop) {
   .sidebar.right > .toc {
