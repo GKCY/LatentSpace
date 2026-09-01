@@ -128,12 +128,6 @@ plugins:
     enabled: false
     order: 90
 
-  - source: "@quartz-community/quartz-fonts"
-    enabled: true
-    options:
-      useThemeFonts: false
-      fontOrigin: local
-
   - source: "@quartz-community/remove-draft"
     enabled: true
 
