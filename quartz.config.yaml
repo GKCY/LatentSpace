@@ -232,6 +232,19 @@ plugins:
       position: footer
       priority: 50
 
+  - source: "@quartz-community/recent-notes"
+    enabled: true
+    options:
+      title: 最近更新
+      limit: 6
+      showTags: false
+      hideTagPages: true
+      hideFolderPages: true
+    layout:
+      position: afterBody
+      priority: 10
+      condition: index
+
   - source: "@quartz-community/spacer"
     enabled: true
     options: {}

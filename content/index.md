@@ -18,15 +18,6 @@ description: 面向大模型、强化学习与分布式训练的技术知识库�
 - [[foundations/Benchmark/index|Benchmark]]：任务设计与评测流程
 - [[paper_reading/index|论文阅读]]：论文与技术报告笔记
 
-## 推荐阅读
-
-- [[PPO|PPO：从目标函数到工程实现]]
-- [[GRPO|GRPO：Group Relative Policy Optimization]]
-- [[FSDP|FSDP：把模型状态拆散到多张 GPU 上]]
-- [[原语|分布式训练中的通信原语]]
-- [[MTP|从 Next-Token Prediction 到 MTP]]
-- [[Gated DeltaNet|从 KV Cache 到“会擦写的白板”]]
-
 ## 关于本站
 
 本站由 [Quartz](https://quartz.jzhao.xyz/) 生成，并通过 GitHub Pages 自动发布。内容仍然使用 Obsidian 和 Markdown 维护。
