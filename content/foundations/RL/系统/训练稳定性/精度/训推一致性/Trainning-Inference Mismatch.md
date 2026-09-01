@@ -56,3 +56,11 @@ R3 重放的是 expert ID/mask，而不是 rollout 侧完整的 router logits �
 最后，R3 只能消除 MoE 特有的离散路由差异，不能自动对齐两侧的 gating weight、attention/FFN kernel、量化精度、sampling processor，也不能解决异步训练中的权重陈旧。在原论文的同一组实验里，R3 将 chosen-token 上的估计 KL 从 $1.535\times10^{-3}$ 降到 $7.5\times10^{-4}$，接近其 Dense 对照的 $6.4\times10^{-4}$，但并没有降到 0。因此更准确的说法是：R3 显著缩小了 MoE routing 引入的 Training-Inference Mismatch，而不是提供 bitwise 的 zero-mismatch。
 
 更完整的算法推导、R2/R3 区别、数据契约、缓存与并行实现、验证指标和适用边界，可以继续看同目录的 [R3 技术详解](<./R3：用Rollout Routing Replay解决MoE Agentic RL的训推不一致.md>)。
+
+### 1.3 用 TIS 对训推分布偏差做算法校正
+
+如果暂时无法让 rollout 与 trainer 的数值路径完全一致，可以把 rollout 保存的真实行为概率记作 $\mu$，把训练后端在同一旧权重下重算的概率记作 $q$，使用重要性比率 $\rho=q/\mu$ 修正策略梯度。为了避免极端 ratio 让少数 token 主导更新，TIS（Truncated Importance Sampling）进一步使用 $\min(\rho,C)$ 截断权重。
+
+TIS 不会消除训推差异，也不能让 KL 自动归零；它是在保留吞吐的前提下，用一定偏差换取更低的梯度方差。它与 PPO clipping 的作用也不同：PPO ratio 管理当前策略相对旧训练策略的更新幅度，TIS ratio 校正旧训练策略与真实 rollout 行为策略之间的分布差异。
+
+完整的公式推导、token/sequence/prefix 粒度、GRPO 接入伪代码、阈值选择、监控指标和适用边界，可继续阅读同目录的 [TIS 技术详解](<./TIS：用截断重要性采样缓解LLM RL训推不一致.md>)。
