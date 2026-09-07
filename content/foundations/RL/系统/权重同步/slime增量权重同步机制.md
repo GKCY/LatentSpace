@@ -24,7 +24,7 @@ BF16 的精度就能解释为什么很多字节可以不传。训练中的微小
 
 代码将导出的 tensor 视作 `uint8`，逐字节比较新旧值。日志里的 `density` 就是**变化字节数 / 导出 tensor 总字节数**。读后面的实验数据时，要记住它统计的是字节。[差分与指标](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L224-L294)。
 
-## 2. 先分清版本：现在的 delta 只走 disk
+## 2. 为什么现在的 delta 只走 disk
 
 slime 的增量同步经过了两次重要调整。只读最早的 PR，很容易误判当前机制。
 
@@ -38,6 +38,19 @@ slime 的增量同步经过了两次重要调整。只读最早的 PR，很容�
 当前实现要求 `delta + disk + 非 colocate`，并指定共享发布目录和推理机本地 checkpoint 目录。配置成 `delta + nccl` 会在参数校验时直接报错。[参数校验](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/utils/arguments.py#L2046-L2079)、[updater 选择](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/backends/megatron_utils/update_weight/__init__.py#L22-L46)。
 
 这里的 `disk` 指通过共享文件系统传输：训练端向共享目录发布差分，推理机从中读取，再更新各自本地的完整模型。
+
+这次移除只涉及增量 NCCL 路径，**全量 NCCL 权重同步仍然保留**。这项工作的主要场景本来就是跨数据中心的训推分离，最初的 PR 将共享文件系统作为主要传输方式，把 NCCL 定位为数据中心内部的验证基线。[最初的设计目标](https://github.com/THUDM/slime/pull/1806)、[当前支持范围](https://github.com/THUDM/slime/pull/2312)。
+
+从 #2089 的改动看，另一项考虑是简化接收端。早期实现用 NaN 标记未变化的位置，并在加载过程中对 `Tensor.copy_`、`fill_` 等写操作做特殊处理，让它们只覆盖变化部分。这使增量更新与模型加载过程紧密相关。新版把差分应用提前到本地 checkpoint 上，后续加载器拿到的就是一份完整权重：
+
+```text
+早期：增量数据 → 专用 delta 接收器 → 加载过程中选择性覆盖模型权重
+新版：增量文件 → 修补本地完整 checkpoint → 常规模型加载器
+```
+
+[#2089](https://github.com/THUDM/slime/pull/2089) 明确强调了这种解耦：让推理端继续使用原有加载器对低精度格式、attention/MoE backend 和并行布局的支持。结合旧接收器的实现，可以理解为用完整 checkpoint 重载的成本，换取更简单的增量接收流程和更少的加载器适配工作。
+
+PR 没有提供“增量 NCCL 比 disk 更慢”的对照实验。这次调整主要是架构取舍。压缩编码和传输方式可以独立选择，字节差分同样可以通过 NCCL 传输，只是当前版本收敛到了共享文件系统这一条路径。
 
 ## 3. 一次同步，实际经过哪些步骤
 
@@ -82,11 +95,36 @@ flowchart TD
 
 这会占用相当一部分 CPU 内存：历史快照是常驻的 NumPy 数组，pinned buffer 用于传输暂存，编码时还需要新值数组、差分数组和压缩结果。部署时要为这些副本留出空间。
 
-## 4. 两种编码：XOR 与 overwrite
+## 4. 字节差分与编码
 
-这个方案处理的是导出 tensor 的字节表示。下面用 $b^{old}$、$b^{new}$ 表示等长的旧、新字节数组。
+### 4.1 为什么把 tensor 视作 uint8
 
-### 4.1 XOR：让不变的字节变成零
+代码先执行 `tensor.detach().contiguous().view(torch.uint8).reshape(-1)`，把导出的 tensor 看成一维字节数组。这里使用的是 `view`：
+
+```python
+tensor.view(torch.uint8)  # 将原有内存解释为字节数组
+tensor.to(torch.uint8)    # 将数值转换成 uint8
+```
+
+**字节视图保留原始位模式和总字节数，没有把权重量化成 8 bit。** 一个 BF16 元素占两字节，换成这个视图后对应两个 `uint8` 元素；一个 FP32 元素则对应四个。`view` 改变的是内存的解释方式，`to` 则按目标 dtype 重新表示数值。[PyTorch 的 view(dtype) 文档](https://docs.pytorch.org/docs/2.14/generated/torch.Tensor.view.html)、[slime 字节视图实现](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L257-L268)。
+
+这样，差分模块就能统一处理 BF16、FP32 和打包后的低精度权重。它只负责还原 checkpoint 中的字节，具体数值格式由导出器和推理 loader 处理。恢复时直接做 XOR 或覆盖，也避开了浮点减法、加法的舍入问题。
+
+按字节比较还能看到元素内部的变化。下面是两个 BF16 数值的小端字节表示：
+
+```text
+旧值 1.0：          80 3F
+新值 1.0078125：    81 3F
+XOR：              01 00
+```
+
+这个元素变了，但只有第一个字节变化。对于 overwrite，记录这个字节的新值及其位置就足够；对于 XOR，未变化的字节变成零，后续压缩可以利用这些重复模式。
+
+`uint8` 也便于直接对接 zstd 和文件字节偏移。不过，压缩率来自数据中的重复模式，`view` 本身不会减少数据量。对同一段内存，用 `uint16` 做逐位 XOR 也能得到等价的结果；选择 `uint8`，是因为这套协议从差分、位置索引到文件修补，都以字节为单位。
+
+### 4.2 XOR：让不变的字节变成零
+
+下面用 $b^{old}$、$b^{new}$ 表示等长的旧、新字节数组。
 
 默认编码计算：
 
@@ -100,19 +138,11 @@ $$
 b_i^{old} \oplus d_i = b_i^{new}
 $$
 
-例如，以下是四个字节的十六进制表示：
-
-```text
-old:  10 20 30 40
-new:  10 21 30 44
-xor:  00 01 00 04
-```
-
 XOR 得到的数组与原 tensor 等长，但未改变的位置全部变成了零。zstd 压缩这些重复模式，才让最终文件小下来。如果一个 tensor 完全没变，代码会直接跳过它。[XOR 编码](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/backends/megatron_utils/update_weight/update_weight_from_disk_delta.py#L224-L244)。
 
 `density=1%` 表示 99% 的字节没变，最终文件有多大，还要看变化字节的分布、取值和元数据开销。
 
-### 4.2 Overwrite：记录变化位置与新字节
+### 4.3 Overwrite：记录变化位置与新字节
 
 另一种编码先计算 `new != old`，再打包：
 
@@ -132,7 +162,7 @@ $$
 
 每个变化位置需要 4 字节索引和 1 字节新值，因此压缩前的开销相当于变化字节数的 5 倍左右。XOR 和 overwrite 都会继续经过 zstd，选择哪一种更省空间，需要比较实际压缩结果。
 
-### 4.3 重复应用 delta 会发生什么
+### 4.4 重复应用 delta 会发生什么
 
 | 特性               | XOR                          | Overwrite                      |
 | ------------------ | ---------------------------- | ------------------------------ |
