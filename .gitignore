@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# Local source materials for blog research
+/content/references/
+
 # Obsidian local UI state and cache
 content/.obsidian/workspace.json
 content/.obsidian/workspace-mobile.json
