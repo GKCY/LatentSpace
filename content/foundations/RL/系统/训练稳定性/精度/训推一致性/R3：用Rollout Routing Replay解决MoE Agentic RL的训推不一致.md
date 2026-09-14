@@ -21,13 +21,15 @@ flowchart LR
 
 这种分工对性能几乎是必需的，但它也引入了一个很容易被低估的问题：即使两侧加载的是同一份权重、输入的是同一串 token，不同模型实现、算子、精度、并行方式和动态 batch 仍可能产生不同的 token 概率。这个现象通常称为 **Training–Inference Mismatch，TIM**。[TIM 诊断工作](https://arxiv.org/html/2605.14220)表明，它不是无害的末位浮点噪声，单独存在时就可能改变优化目标并触发 RL 训练崩溃。
 
-为了看清问题，区分三个分布：
+为了看清问题，先区分三个分布：
 
-- $\mu=\pi^{\text{rollout}}_{\theta_b}$：rollout 引擎真正用于采样 token 的行为策略；
-- $\pi^{\text{train}}_{\theta_{\text{old}}}$：训练引擎在旧权重上重算得到的策略；
-- $\pi^{\text{train}}_{\theta}$：当前正在被优化的训练策略。
+- $\mu=\pi^{\text{rollout}}_{\theta_b}$：rollout 引擎真正用于采样 token 的行为策略，其中 $\theta_b$ 是生成这批轨迹时使用的权重版本；
+- $\pi^{\text{train}}_{\theta_{\text{old}}}$：训练引擎在本轮更新的固定参考权重 $\theta_{\text{old}}$ 上重算得到的策略；
+- $\pi^{\text{train}}_{\theta}$：随优化步骤变化的当前训练策略。
 
-对于 rollout 中已经采样出的 token $a_t$，正确的行为策略重要性比率应当是：
+这里的 $\mu$ 指经过 temperature、top-p、top-k 等实际启用的采样处理后得到的分布；rollout 保存的 logprob 只有采用相同口径，才能作为 $\log\mu$ 使用。为聚焦执行栈引起的 TIM，以下比率分析默认两侧采用相同温度、不做词表截断的 softmax 概率口径。
+
+令 $s_t$ 表示生成 token $a_t$ 前的完整上下文，且 $a_t\sim\mu(\cdot\mid s_t)$。以当前训练策略为目标分布，给定 $s_t$ 的 token 级重要性采样比率（尚未做权重截断）为：
 
 $$
 \rho_t^{\text{total}}
@@ -36,7 +38,19 @@ $$
      {\mu(a_t\mid s_t)}.
 $$
 
-在异步系统中，$\theta_b$ 可能早于 trainer 用作 proximal reference 的 $\theta_{\text{old}}$。把比率拆成三项，可以避免把权重陈旧和同 checkpoint 的引擎误差混为一谈：
+这个比率描述同一上下文下的动作概率变化，单独使用它不会自动校正上下文本身的访问分布或整条轨迹的分布。
+
+$\theta_b$ 记录“这批数据由哪个版本生成”，$\theta_{\text{old}}$ 则规定“本轮 PPO 更新以哪个版本为参照”。后者用于计算 $\pi^{\text{train}}_\theta/\pi^{\text{train}}_{\theta_{\text{old}}}$，衡量当前策略相对于参考策略的变化幅度。在这批数据的多次优化步骤中，$\theta_{\text{old}}$ 保持固定，$\theta$ 持续更新。
+
+这两个权重版本是否相同，取决于系统实现。例如，假设一个异步系统在开始训练每批数据时，[[PPO#2.2 数据来自旧策略|把 trainer 当时的权重固定为本轮更新参考]]，就可能出现下面的过程：
+
+1. rollout 用 **v100** 生成这批轨迹，因此 $\theta_b=\theta^{(100)}$。
+2. 生成和排队期间，trainer 继续用其他数据训练，已经更新到 **v102**。这批轨迹进入训练时，系统将 v102 固定为更新参考，因此 $\theta_{\text{old}}=\theta^{(102)}$。
+3. trainer 在这批轨迹上继续优化，当前参数 $\theta$ 从 v102 更新到 v103 等后续版本；这批数据的 $\theta_b$ 和 $\theta_{\text{old}}$ 仍分别是 v100 和 v102。
+
+在这个例子里，生成数据的权重 $\theta_b$ 比本轮更新参考 $\theta_{\text{old}}$ 旧了两个版本。为了区分这段版本差异和执行栈差异，再引入一个中间分布 $\pi^{\text{train}}_{\theta_b}$：它表示训练引擎加载 rollout 当时的权重 $\theta_b$ 后，在相同上下文 $s_t$ 上计算得到的策略分布。它与 $\mu$ 使用同一份权重，因此二者的比较隔离了引擎差异；它与 $\pi^{\text{train}}_{\theta_{\text{old}}}$ 使用同一训练引擎，因此二者的比较隔离了权重版本差异。
+
+这个中间分布用于分析，实际训练不一定需要额外计算它。借助它，可以将总比率拆成三项：
 
 $$
 \rho_t^{\text{total}}
@@ -44,7 +58,7 @@ $$
 \underbrace{
 \frac{\pi^{\text{train}}_{\theta}(a_t\mid s_t)}
      {\pi^{\text{train}}_{\theta_{\text{old}}}(a_t\mid s_t)}
-}_{\rho_t^{\text{update}}\colon\,\text{正常的策略更新偏移}}
+}_{\rho_t^{\text{update}}\colon\,\text{相对更新参考的策略偏移}}
 \cdot
 \underbrace{
 \frac{\pi^{\text{train}}_{\theta_{\text{old}}}(a_t\mid s_t)}
@@ -57,44 +71,124 @@ $$
 }_{\rho_t^{\text{sys}}\colon\,\text{同权重下的执行栈偏移}}.
 $$
 
-$\rho^{\text{update}}$ 是 PPO、GRPO 等算法本来就要管理的 policy drift；$\rho^{\text{stale}}$ 来自异步队列和长 rollout；$\rho^{\text{sys}}$ 才是相同权重下由执行栈额外引入的偏差。同步场景中 $\theta_b=\theta_{\text{old}}$，中间项为 1，但系统项依然可能存在。如果 trainer 直接用自己重算的 old logprob 当分母，$\rho^{\text{sys}}$ 会被隐藏，但数据仍然不是从这个 trainer 分布采样的；如果使用 rollout 保存的 logprob，当训练尚未做任何参数更新时，比率也可能已经明显偏离 1。两种做法都不能从根因上消除 TIM。
+总比率 $\rho^{\text{total}}$ 也不等于 PPO 必须直接用于 clipping 的比率。PPO 可以用 $\rho^{\text{update}}$ 控制相对于旧训练策略的更新幅度，再在 clipping 外另加行为分布校正；这种做法与直接对 $\rho^{\text{total}}$ 做 clipping 通常不等价。[TIM 诊断工作的第 4 节](https://arxiv.org/html/2605.14220#S4)区分了这些实现。
 
-R3 的作用，是在 MoE 模型中从计算路径源头压低 $\rho^{\text{sys}}$ 的路由重尾异常；它在 Update 阶段继续使用同一 mask，也会约束 $\rho^{\text{update}}$ 中由路由翻转造成的噪声，但不会消除 $\rho^{\text{stale}}$。
+$\rho^{\text{update}}$ 衡量当前训练策略相对于更新参考的变化；$\rho^{\text{stale}}$ 衡量更新参考与采样权重版本之间的差异，在上述例子中对应 v102 与 v100 的差别；$\rho^{\text{sys}}$ 则衡量相同权重下由执行栈额外引入的偏差。
+
+有些系统始终把生成数据的版本作为更新参考，此时即使异步训练，也有 $\theta_{\text{old}}=\theta_b$，中间项 $\rho^{\text{stale}}=1$。这时，采样权重相对于当前参数 $\theta$ 的滞后体现在 $\rho^{\text{update}}$ 中。同步采样并以采样版本为更新参考时，中间项同样为 1；无论哪种设置，系统项都依然可能存在。
+
+如果 trainer 直接用自己重算的 old logprob 当分母，$\rho^{\text{sys}}$ 会被隐藏，但数据仍然不是从这个 trainer 分布采样的；如果使用 rollout 保存的 logprob，当训练尚未做任何参数更新时，比率也可能已经明显偏离 1。两种做法都不能从根因上消除 TIM。
+
+R3 的作用，是在 MoE 模型中从计算路径源头压低 $\rho^{\text{sys}}$ 的路由重尾异常；它在 Update 阶段继续使用同一 mask，也会约束 $\rho^{\text{update}}$ 中由路由翻转造成的噪声，但不会消除采样权重落后于训练权重的问题。
 
 ## 2. 为什么 MoE 会把很小的数值误差放大
 
 ### 2.1 Dense 网络是连续扰动，Top-K 路由是离散跳变
 
-设某个 token 在一个 MoE 层的输入为 $\mathbf{x}$，router 权重为 $\mathbf{W}_r$，共有 $M$ 个专家，每个 token 激活其中 $K$ 个。普通 MoE 前向计算可以写成：
+在常见的稀疏 MoE（Mixture of Experts，混合专家）Transformer 中，部分或全部层的前馈网络（FFN）会被替换成一组专家网络。在 Dense 层里，每个 token 都经过该层同一套 FFN 参数；在 MoE 层里，则有 $M$ 套参数不同的 FFN，由一个小型路由网络 **router** 为每个 token 选择其中 $K$ 个参与计算，通常 $K$ 远小于 $M$。这样，模型可以拥有较多专家参数，而每个 token 只需执行其中一部分。[Mixtral 论文 §2.1](https://arxiv.org/html/2401.04088v1#S2.SS1)给出了这种结构。
+
+这里的“专家”是模型内部的 FFN 模块，每个专家都把输入向量变换成一个输出向量。router 和专家的参数都通过训练学习，专家不需要预先被标成“数学专家”“代码专家”等人工类别。路由选择发生在**每个 token、每个 MoE 层**上，因此同一个 token 到了不同层，可以使用不同的专家。
+
+进入这个 MoE 层时，token 已经表示成一个包含上下文信息的隐藏向量 $\mathbf{x}$。router 根据这个向量打分；被选中的专家也各自接收完整的 $\mathbf{x}$，分别计算，再把结果合并。
+
+下面沿用 [R3 论文 §4.1](https://arxiv.org/html/2510.11370#S4.SS1)的简化形式：先选 Top-K 专家，再在选中专家内用 softmax 计算混合权重。真实模型还有其他打分和归一化方式，后文 §3.1 会说明。
+
+#### 从隐藏向量到专家分数
+
+设 $\mathbf{x}$ 有 $d$ 个分量，router 的参数矩阵 $\mathbf{W}_r$ 大小为 $d\times M$。一次线性变换就能得到 $M$ 个专家分数：
 
 $$
-\mathbf{s}=\mathbf{x}\mathbf{W}_r,
+\mathbf{s}=\mathbf{x}\mathbf{W}_r.
 $$
 
+其中 $s_i$ 是第 $i$ 个专家的分数，也称 router logit。可以把 $\mathbf{W}_r$ 的第 $i$ 列理解成一组学到的打分参数：它与 $\mathbf{x}$ 做点积，得到这个 token 对专家 $i$ 的分数。分数越大，router 越倾向于选它；这些分数还没有归一化，可以为负，也不是模型最终预测下一个 token 的词表概率。
+
+假设某层共有 **4 个专家，每个 token 选 2 个**，即 $M=4,K=2$。对于当前 token，router 算出下面这组分数。这是用于解释机制的假想数值：
+
+| 专家 | router 分数 $s_i$ | 分数排名 | 是否进入 Top-2 |
+| --- | ---: | ---: | --- |
+| $\mathcal{E}_1$ | 2.000 | 1 | 是 |
+| $\mathcal{E}_2$ | 1.500 | 2 | 是 |
+| $\mathcal{E}_3$ | 1.499 | 3 | 否 |
+| $\mathcal{E}_4$ | -1.000 | 4 | 否 |
+
+#### Top-K 决定哪些专家参与计算
+
+Top-K 的规则就是取分数最高的 $K$ 个专家。在这个例子里，专家 1 和专家 2 入选，专家 3 和专家 4 不参与这个 token 在这一层的专家计算。虽然专家 3 只比专家 2 低了 0.001，但名额只有两个，它仍然被排除。
+
+公式中的 `TopKMask` 把这个选择结果写成一个只有 0 和 1 的向量：
+
 $$
-\mathbf{I}=\operatorname{TopKMask}(\mathbf{s}, K),
+\mathbf{I}=\operatorname{TopKMask}(\mathbf{s},K)
+=[1,1,0,0].
 $$
+
+这里 $I_i=1$ 表示选中专家 $i$，$I_i=0$ 表示未选中。这个向量就是后文 R3 要记录和重放的 **routing mask**；实现中也可以直接保存选中的专家 ID，例如 `[1, 2]`。
+
+给定这组没有并列的分数，Top-K 的选择结果是确定的，不需要再随机抽取专家。这里选的是模型内部的专家；生成文本时的 `top-k sampling` 选的是词表中的候选 token，两者发生在不同环节。
+
+#### gate 权重决定怎样合并专家输出
+
+选定专家后，还需要决定它们各自的输出乘上多大的系数。R3 论文使用的抽象是在**选中专家之间**做 softmax，得到 gate 权重 $g_i$：
 
 $$
 g_i=
 \frac{I_i\exp(s_i)}
-     {\sum_{j=1}^{M}I_j\exp(s_j)},
+     {\sum_{j=1}^{M}I_j\exp(s_j)}.
 $$
 
+mask 让未选中专家的权重为 0；选中专家的权重都为正，并且相加为 1。代入上面的数值，只有专家 1 和专家 2 出现在分母中：
+
 $$
-\mathbf{y}=\sum_{i=1}^{M}g_i\mathcal{E}_i(\mathbf{x}).
+g_1=\frac{e^{2.000}}{e^{2.000}+e^{1.500}}\approx0.622,
+\qquad
+g_2=\frac{e^{1.500}}{e^{2.000}+e^{1.500}}\approx0.378,
+\qquad
+g_3=g_4=0.
 $$
 
-在 Dense 模型里，隐藏状态出现一个很小的数值扰动，后续输出一般也先表现为连续的小扰动。MoE 中间多了一个 `TopK`：只要两个候选专家位于选择边界附近，极小的 router logit 变化就可能让专家集合发生离散翻转。
+专家 1 和专家 2 分别用自己的 FFN 参数处理同一个输入 $\mathbf{x}$，得到同维度的输出向量 $\mathcal{E}_1(\mathbf{x})$ 和 $\mathcal{E}_2(\mathbf{x})$。MoE 层把它们加权相加：
 
-例如 rollout 侧的两个边界分数是：
+$$
+\mathbf{y}=\sum_{i=1}^{M}g_i\mathcal{E}_i(\mathbf{x})
+\approx0.622\,\mathcal{E}_1(\mathbf{x})
++0.378\,\mathcal{E}_2(\mathbf{x}).
+$$
 
-```text
-expert_7  = 5.001
-expert_12 = 5.000
+下图中的实线表示数据流动，虚线表示专家选择和混合系数如何控制计算：
+
+```mermaid
+flowchart LR
+    X["当前 token 的隐藏向量 x"] --> R["Router：给 4 个专家打分"]
+    R --> T["Top-2：选专家 1、2"]
+    T --> G["选中分数做 softmax：0.622、0.378"]
+    X --> E1["专家 1：FFN"]
+    X --> E2["专家 2：FFN"]
+    T -.-> E1
+    T -.-> E2
+    E1 --> Y["加权相加，得到输出 y"]
+    E2 --> Y
+    G -.-> Y
 ```
 
-训练侧只需出现千分之一量级的反向扰动，就可能改选 `expert_12`。变化的不再只是一个小数，而是 token 接下来通过了另一套 FFN 参数。这个差异会继续传播到后续层，最终放大成明显的 token logprob 偏差。
+因此，$\mathbf{I}$ 和 $\mathbf{g}$ 承担不同的工作：$\mathbf{I}$ 决定执行哪几套专家参数，$\mathbf{g}$ 决定这些专家的输出如何混合。R3 重放的是前者，后者仍由训练侧重新计算。
+
+#### 为什么很小的分数变化会换掉计算路径
+
+现在回到训推不一致。假设 rollout 侧得到上表中的分数，而训练侧因为数值误差，得到的分数略有变化：
+
+| 专家 | rollout 分数 | trainer 分数 | 选择变化 |
+| --- | ---: | ---: | --- |
+| $\mathcal{E}_1$ | 2.000 | 2.000 | 两侧都选中 |
+| $\mathcal{E}_2$ | 1.500 | 1.498 | 从选中变为未选中 |
+| $\mathcal{E}_3$ | 1.499 | 1.501 | 从未选中变为选中 |
+| $\mathcal{E}_4$ | -1.000 | -1.000 | 两侧都未选中 |
+
+专家 2 和专家 3 的分数各只变了 0.002，但排名交换了，Top-2 集合便从 `{1, 2}` 变成 `{1, 3}`，mask 也从 `[1, 1, 0, 0]` 变成 `[1, 0, 1, 0]`。这个“选中 / 未选中”的切换就是离散跳变。
+
+新的混合系数仍然约为 0.622 和 0.378，变化很小；但原来乘以约 0.378 的那一项，从 $\mathcal{E}_2(\mathbf{x})$ 换成了 $\mathcal{E}_3(\mathbf{x})$。**两个专家的 router 分数接近，并不保证它们的 FFN 输出接近。** 它们使用不同参数，这次切换就可能造成明显的隐藏向量变化，继续传播到后续层，最终表现为 token logprob 的偏差。
+
+Dense FFN 在固定参数下对输入的变化是连续的；即使输出变化可能被放大，也没有这种“第 $K$ 名与第 $K+1$ 名交换后，突然换一套参数”的额外机制。MoE 的敏感点就在 Top-K 选择边界附近。
 
 更严重的是，训练侧可能把梯度送到另一组专家：**实际参与生成的计算路径与承担这次 policy gradient 的计算路径不再相同。**
 
@@ -283,17 +377,84 @@ $$
 
 ### 4.4 Prefix KV Cache 必须带着路由一起缓存
 
-多轮 Agent 通常会复用前几轮的 KV Cache。命中 prefix cache 后，推理引擎不会再次执行这段 prefix 的完整 prefill，自然也不会重新产生 prefix 的路由结果。
+这一节的核心是：**推理引擎可以复用历史计算结果，跳过一段 token 的前向计算；但 trainer 重放整条轨迹时，仍然需要知道这段历史当时选择了哪些专家。** 要同时做到这两点，就需要把路由记录与可复用的 KV Cache 对应起来。
 
-工程上要区分两份用途不同的数据：一份是为 prefix 命中服务的 **KV-slot route cache**，另一份是最终随训练样本传走的 **durable trajectory trace**。
+#### KV Cache 保存什么，省掉什么计算
 
-- 冷 prefill 时同时写入 KV 和 route trace；
-- prefix cache 命中时，从与 KV slot 对齐的 route cache 取回 prefix 路由；
-- KV slot 被抢占、驱逐或释放前，必须把仍属于该 request 的路由物化或快照到 durable trace，不能跟着 KV 一起丢失；
-- 权重版本切换后，旧 slot cache 不再用于新 forward，但已经生成轨迹的 durable trace 仍要保留，供 trainer 重放历史事实；
-- prompt 路由与 decode 路由最终按真实 token 顺序拼成一条 trace。
+先看标准因果注意力。每个 token 在一层注意力中会产生 Query（Q）、Key（K）和 Value（V）向量：当前 token 的 Q 与可见上下文的 K 匹配，算出注意力权重，再按这些权重汇总对应的 V。可见上下文包括前面的 token，通常也包括当前位置自身。
 
-R3 论文正是通过这种 route-mask caching，使多轮实验不必为了补路由信息而重新 prefill 整段历史。
+生成后续 token 时，模型会反复读取历史位置的 K 和 V。**KV Cache 就是把这些已经计算好的 K/V 向量按层保存下来**，供后续计算直接使用。在模型权重和位置等条件不变时，因果注意力不会让后来追加的 token 反过来改变前面 token 的表示，因此可以复用历史 K/V。[Transformers 的缓存说明](https://huggingface.co/docs/transformers/main/en/cache_explanation#attention-matrices)解释了这一机制；注意力本身的推导也可参见 [[Gated DeltaNet#1. 标准注意力：保存所有原始便签|标准注意力与 KV Cache]]。
+
+推理过程通常分成两个阶段：
+
+- **Prefill**：处理输入的 prompt，为尚未缓存的 token 执行前向计算，建立它们在各层的 KV Cache。这里也会经过 MoE 层，产生专家选择。
+- **Decode**：继续生成时，通常每一步把刚采样出的一个 token 送入模型，读取历史 KV，计算这个输入位置的新 KV 和 MoE 路由，再预测下一个 token。
+
+缓存省掉的是**历史 token 重新经过各层网络的计算**。新 token 仍然要读取历史 KV、计算注意力，也仍然要经过自己的 MoE 路由。KV Cache 中保存的是注意力向量，专家 ID 则是另一份需要显式记录的数据。
+
+#### 多轮 Agent 怎样命中 prefix cache
+
+Prefix 就是输入序列从开头开始的一段前缀。Agent 调用工具后，下一轮输入通常保留前面的对话，再追加工具返回的 observation。因此，下一轮可能有很长一段 token 前缀已经计算过。
+
+假设历史前缀 $H$ 有 **1000 个已经执行过前向计算的 token**，新追加的工具 observation $O$ 有 **100 个 token**。下一轮输入就是：
+
+```text
+位置 0 … 999          位置 1000 … 1099
+[历史前缀 H：1000]  +  [新 observation O：100]
+```
+
+假设前 1000 个位置的 KV 全部命中缓存，那么这一轮的处理方式是：
+
+| 输入部分 | 没有可复用的 KV 时 | 命中历史前缀 KV 时 |
+| --- | --- | --- |
+| 历史 $H$：1000 个 token | 重新前向，计算 KV 和路由 | 直接复用 KV，跳过这些位置的前向 |
+| 新 observation $O$：100 个 token | 执行前向，计算 KV 和路由 | 仍需执行前向，计算 KV 和路由，并读取 $H$ 的 KV |
+| 后续 decode 输入位置 | 随生成逐步计算 | 同样随生成逐步计算 |
+
+实际引擎常按 block 管理缓存，所以可复用长度取决于实际命中的位置。命中也要求 token IDs、位置和 attention 语义、模型及 adapter 版本等条件兼容，不能只比较可读文本是否相同。[vLLM 的 prefix caching 设计](https://docs.vllm.ai/en/latest/design/prefix_caching/)介绍了这种按前缀复用缓存块的方式。
+
+#### 跳过历史计算后，R3 的路由从哪里来
+
+在上面的例子里，当前这次 forward 只会新产生 observation 等未缓存位置的路由。**历史 $H$ 的 1000 个位置没有重新经过 router，因此不会再产生一份历史路由。** 如果只收集这次 forward 的结果，训练样本就会缺少前面这一段 route trace。
+
+推理本身仍能继续，因为它已经有 $H$ 的 KV；但 trainer 在更新时通常要用训练侧参数重新计算完整上下文，并建立反向传播所需的计算图。推理时保存的 KV 不能直接替代这次训练计算，所以 trainer 仍需要 $H$ 在各个 MoE 层的专家 ID，才能沿历史路径重放。
+
+R3 的做法是：**第一次真正计算 $H$ 时，除了保存它的 KV，也保存对应的路由；以后复用这段 KV 时，一并取回当时的路由。** 例如，历史中某个 token 在某个 MoE 层选择了专家 `[1, 3]`，缓存命中时就取回这个记录，而无需重新运行 router 去猜。KV 向量本身没有一个可以直接读出 `[1, 3]` 的专家 ID 字段。
+
+最终交给 trainer 的记录按 token 顺序组成：
+
+```text
+完整 route trace
+= 从历史缓存取回的 H 路由
++ 本轮 prefill 新产生的 O 路由
++ 后续 decode 实际消费的输入位置的路由
+```
+
+这里每个 token 位置的“路由”，都包含该位置在各个 MoE 层选择的专家 ID。一个刚采样出的 token 可能还没有被送入下一次 forward，因此未必已有 KV 和路由；具体的输入位置与预测 label 对齐方式见 §5.2。
+
+[R3 论文 §4.2](https://arxiv.org/html/2510.11370#S4.SS2)直接提出了把 router mask 与 prefix KV 一起缓存的做法，使多轮任务可以复用历史路由，避免仅为补齐路由而重新 prefill 整段历史。
+
+#### 为什么还要区分临时缓存和训练轨迹记录
+
+保存路由之后，还要处理它的生命周期。推理引擎的显存有限，会把 KV 放在可重复分配的槽位或缓存块中；旧请求结束、缓存被驱逐，或调度器回收空间后，同一个物理槽位可能改存另一条请求的数据。[vLLM 的缓存管理文档](https://docs.vllm.ai/en/latest/design/prefix_caching/#operations)说明了块的分配、释放和驱逐过程。
+
+因此，在工程上应区分两种用途。下面是对路由数据管理的要求，不代表 R3 论文规定了某一种固定的内存布局：
+
+| 记录                                        | 给谁使用                         | 按什么找到数据                    | 需要保留多久                      |
+| ----------------------------------------- | ---------------------------- | -------------------------- | --------------------------- |
+| **KV-slot route cache**：与 KV 槽位对应的路由缓存    | rollout 引擎，在 prefix 命中时取回旧路由 | KV 槽位对应的 token 位置，以及 MoE 层 | 只要对应 prefix 还可被复用，就应可取回它的路由 |
+| **Durable trajectory trace**：随训练轨迹保留的路由记录 | trainer，重放这条样本               | 轨迹 ID、token 位置和 MoE 层      | 保留到这条轨迹不再需要被训练消费            |
+
+这里的 *durable* 指记录能跨过推理缓存的回收，保留到训练所需的时间；它可以放在内存 buffer 中，不要求一定写入磁盘。这两种用途也不要求把整份路由复制两遍，可以共享不可变的路由数据，但必须保证仍被引用的内容不会遭到覆盖。
+
+例如，请求 A 的一个历史 token 曾占用 KV 槽位 42。如果轨迹里只记下“以后去槽位 42 取路由”，而该槽位随后被分配给请求 B，trainer 就可能读到 B 的专家 ID。数组长度和专家编号都可能合法，实际重放的却是另一条样本的路径。
+
+为避免这种错误，路由数据应按下面的顺序交接：
+
+1. **首次计算时记录**：没有可用缓存的 prefill，也称冷 prefill，应同时记录新 KV 和对应路由；decode 新增位置同样记录。
+2. **命中时接续**：取回命中前缀的路由，再与新计算部分的路由按真实 token 顺序拼接。
+3. **回收前保留训练所需数据**：在槽位被释放或覆盖前，把仍需训练的路由复制到轨迹 buffer，或保留能阻止底层路由数据被回收的稳定引用。仅保存槽位编号不够，也无需为了保留路由而长期占住整份 KV。
+4. **分别处理缓存失效与历史保留**：在要求 KV 与当前权重版本一致的设置下，切换权重后旧 KV 及对应前缀路由缓存应停止用于新 forward；已经生成的轨迹仍须保留原始 route trace，供 trainer 重放当时的路径。
 
 ### 4.5 异步 Agent RL 的权重陈旧仍需单独处理
 
@@ -594,17 +755,17 @@ R3 提升 6.8 个百分点，并让训练继续到实验结束。这个实验很
 
 训推一致性不是一个单点问题。把不同技术放到同一张表里，更容易看清各自边界：
 
-| 方法 | 作用层 | 主要修复什么 | R3 不能替代它的原因 |
-| --- | --- | --- | --- |
-| R3 | MoE 离散计算路径 | rollout/trainer 的 Top-K expert set 不同 | R3 本身就是这一层的方案 |
-| R2 | trainer 内部路由 | Recompute 到 Update 的 route drift | 看不到 rollout 引擎真实走过的 route |
-| Batch-invariant / 统一 kernel | 数值执行 | batch、kernel、精度导致的广泛数值差异 | R3 只固定专家集合，其他算子仍可能不同 |
-| TIS / correction IS | Loss | 对剩余训推 ratio 做截断或校正 | 属于事后修正，R3 属于根因修复，可按需组合 |
-| Sequence rejection | 数据选择 | 丢弃累计 mismatch 过大的轨迹 | 会牺牲数据，且不修复路由源头 |
-| GSPO | 优化目标 | 降低 token-level ratio 噪声，改为 sequence-level clipping | 算法稳定性与执行路径一致性是两个维度 |
-| TITO | Token/context | 保证 trainer 使用 rollout 的真实 token 历史 | token 对不上时，R3 trace 也无法正确对齐 |
-| Staleness control | 异步调度 | 限制旧 policy 数据、混版本 trajectory | R3 不会消除权重版本差 |
-| Sampling replay/correction | 行为分布 | 对齐 temperature、top-k/p、penalty、grammar 后的真实分布 | R3 不处理 vocabulary sampling processor |
+| 方法                          | 作用层           | 主要修复什么                                             | R3 不能替代它的原因                          |
+| --------------------------- | ------------- | -------------------------------------------------- | ------------------------------------ |
+| R3                          | MoE 离散计算路径    | rollout/trainer 的 Top-K expert set 不同              | R3 本身就是这一层的方案                        |
+| R2                          | trainer 内部路由  | Recompute 到 Update 的 route drift                   | 看不到 rollout 引擎真实走过的 route            |
+| Batch-invariant / 统一 kernel | 数值执行          | batch、kernel、精度导致的广泛数值差异                           | R3 只固定专家集合，其他算子仍可能不同                 |
+| TIS / correction IS         | Loss          | 对剩余训推 ratio 做截断或校正                                 | 属于事后修正，R3 属于根因修复，可按需组合               |
+| Sequence rejection          | 数据选择          | 丢弃累计 mismatch 过大的轨迹                                | 会牺牲数据，且不修复路由源头                       |
+| GSPO                        | 优化目标          | 降低 token-level ratio 噪声，改为 sequence-level clipping | 算法稳定性与执行路径一致性是两个维度                   |
+| TITO                        | Token/context | 保证 trainer 使用 rollout 的真实 token 历史                 | token 对不上时，R3 trace 也无法正确对齐          |
+| Staleness control           | 异步调度          | 限制旧 policy 数据、混版本 trajectory                       | R3 不会消除权重版本差                         |
+| Sampling replay/correction  | 行为分布          | 对齐 temperature、top-k/p、penalty、grammar 后的真实分布      | R3 不处理 vocabulary sampling processor |
 
 最后一项尤其容易遗漏。rollout 真正的行为策略可能经过 temperature、top-k、top-p、min-p、repetition penalty 或 structured decoding。如果 rollout 保存的是处理后、重新归一化的 logprob，而 trainer 比较的是 full-vocabulary raw log-softmax，两者支持集和概率语义本来就不同。R3 对专家路由完全正确，也修不了这个 ratio。
 
