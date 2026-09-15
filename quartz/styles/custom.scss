@@ -20,6 +20,9 @@ pre,
 
 .katex-display {
   display: block;
+  // CJK fallback glyphs can extend beyond KaTeX's calculated formula height.
+  // Leave room inside the scroll container so overflow-y: hidden does not clip them.
+  padding-block: 0.5em;
 }
 
 article :not(pre) > code {
