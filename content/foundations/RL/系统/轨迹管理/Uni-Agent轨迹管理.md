@@ -65,17 +65,11 @@ PPO/GRPO trainer
 
 ### 1. 数据集中的 prompt
 
-以 SWE-Bench 为例，预处理后的 `prompt` 是 OpenAI chat 格式：
+以当前 SWE-Bench 预处理为例，数据集中的 `prompt` 是只包含问题描述的 OpenAI chat 格式：
 
 ```python
 prompt = [
-    {"role": "system", "content": SYSTEM_PROMPT},
-    {
-        "role": "user",
-        "content": USER_PROMPT.format(
-            problem_statement=example["problem_statement"]
-        ),
-    },
+    {"role": "user", "content": example["problem_statement"]},
 ]
 ```
 
@@ -98,7 +92,8 @@ data.return_raw_chat=True
 raw_prompt = sample_fields["raw_prompt"]
 ```
 
-不过在当前内置 `run_task` 路径里，任务实际使用的是 `tools_kwargs["task"]["prompt"]`；`raw_prompt` 主要用于遵循 verl runner 协议和保留样本元数据。任务最终执行：
+当前内置 `run_task` 路径会把 `raw_prompt` 写回样本 Task Config 的 `prompt`；它是数据集的权威
+消息来源，`tools_kwargs["task"]` 主要提供任务配置和元数据。任务最终执行：
 
 ```python
 messages = cfg.prompt
@@ -114,8 +109,8 @@ Agent 会维护类似下面的消息历史：
 
 ```json
 [
-  {"role": "system", "content": "..."},
-  {"role": "user", "content": "..."},
+  { "role": "system", "content": "..." },
+  { "role": "user", "content": "..." },
   {
     "role": "assistant",
     "content": "",
@@ -125,7 +120,7 @@ Agent 会维护类似下面的消息历史：
         "type": "function",
         "function": {
           "name": "read_file",
-          "arguments": {"path": "foo.py"}
+          "arguments": { "path": "foo.py" }
         }
       }
     ]
@@ -179,18 +174,20 @@ TrajectoryBuffer(
     response_mask,
     response_logprobs,
     routed_experts,
+    generation_versions,
 )
 ```
 
 各字段的语义是：
 
-| 字段 | 含义 |
-|---|---|
-| `prompt_ids` | 第一次模型调用时完整模板化得到的 prompt token |
-| `response_ids` | 历次模型生成 token，加上轮次之间插入的上下文 token |
-| `response_mask` | `1` 表示模型实际生成，`0` 表示工具结果、用户消息或模板连接 token |
-| `response_logprobs` | 与 `response_ids` 对齐；模型生成位置是真实 logprob，上下文位置填 `0.0` |
-| `routed_experts` | 可选的 MoE routing 信息 |
+| 字段                  | 含义                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------ |
+| `prompt_ids`          | 第一次模型调用时由 Continuous Token builder 构造的 prompt token                                        |
+| `response_ids`        | 历次模型生成 token，加上轮次之间插入的上下文 token                                                     |
+| `response_mask`       | `1` 表示模型实际生成，`0` 表示工具结果、用户消息或模板连接 token                                       |
+| `response_logprobs`   | 请求 logprobs 时与 `response_ids` 对齐；模型生成位置是真实 logprob，上下文位置填 `0.0`，未请求时可为空 |
+| `routed_experts`      | 可选的 MoE routing 信息；backend 每轮对完整上下文重算后替换，最终覆盖整条序列                          |
+| `generation_versions` | 每次生成对应的 rollout 权重版本范围，rollback 时随被删除的生成一起移除                                 |
 
 这里有一个容易误解的点：
 
@@ -216,10 +213,10 @@ response_ids:
 
 ## 三、第一次模型调用：完整模板化
 
-当 Session 没有找到可复用的 chain 时，它会对完整 message list 编码：
+当 Session 没有找到可复用的 chain 时，它会对完整 message list 构造初始 token 流：
 
 ```python
-prompt_ids = codec.encode_full(
+prompt_ids = codec.build_initial_tokens(
     messages,
     tools=tools,
     image_data=image_data,
@@ -229,7 +226,8 @@ prompt_ids = codec.encode_full(
 buffer = TrajectoryBuffer(prompt_ids=prompt_ids)
 ```
 
-文本模型的逻辑相当于：
+文本模型的底层仍会调用 chat template；当前入口是 Continuous Token builder 的
+`build_initial_tokens()`，而不是 Session 自己调用一个 `encode_full()` 方法。其效果相当于：
 
 ```python
 prompt_ids = apply_chat_template(
@@ -242,26 +240,20 @@ prompt_ids = apply_chat_template(
 
 其中 `add_generation_prompt=True` 会在序列尾部添加 assistant 开始生成所需的模板标记。
 
-多模态模型则先渲染字符串模板，再交给 processor：
+多模态模型由 processor-backed Continuous Token builder 处理。Gateway 会把图片、视频和
+processor 参数交给同一个初始 token 构造入口；概念上仍然是：
 
 ```python
-raw_prompt = apply_chat_template(
-    processor,
+prompt_ids = codec.build_initial_tokens(
     messages,
     tools=tools,
-    add_generation_prompt=True,
-    tokenize=False,
+    image_data=image_data,
+    video_data=video_data,
 )
-
-model_inputs = processor(
-    text=[raw_prompt],
-    images=image_data,
-    videos=video_data,
-    return_tensors="pt",
-)
-
-prompt_ids = model_inputs["input_ids"]
 ```
+
+具体模型族可以在 builder 内调用 processor 展开图片占位 token；最终的图像/视频张量由
+Framework 在写入训练数据时根据完整媒体列表重建。
 
 随后 Gateway 将：
 
@@ -283,13 +275,22 @@ output.log_probs
 output.stop_reason
 ```
 
-Session 将这些 token 原样追加：
+Session 会先通过 `MessageCodec.merge_assistant_tokens()` 将这些 token 合并到当前 runtime
+token 流，再由 Continuous Token builder 对 `response_mask` 和 logprob 做对齐：
 
 ```python
 response_ids = list(output.token_ids)
-buffer.response_ids.extend(response_ids)
-buffer.response_mask.extend([1] * len(response_ids))
-buffer.response_logprobs.extend(output.log_probs)
+runtime_token_ids = buffer.prompt_ids + buffer.response_ids
+merged_token_ids, response_mask, response_logprobs = codec.merge_assistant_tokens(
+    runtime_token_ids,
+    response_ids,
+    buffer.response_mask,
+    buffer.response_logprobs,  # 请求 logprobs 时传入，否则为 None
+    assistant_logprobs=output.log_probs,  # 请求 logprobs 时传入，否则为 None
+)
+buffer.response_ids = merged_token_ids[len(buffer.prompt_ids):]
+buffer.response_mask = response_mask
+buffer.response_logprobs = response_logprobs or []
 ```
 
 因此模型输出部分保留了严格的 sampled-token provenance：
@@ -315,7 +316,7 @@ decode→encode 不保证恢复原始 token 边界，tool-call JSON、reasoning 
 
 ---
 
-## 五、后续模型调用：只模板化增量 messages
+## 五、后续模型调用：Continuous Token 合并增量 messages
 
 假设第一轮完成后，chain 中保存：
 
@@ -347,45 +348,60 @@ incremental_messages = messages[incremental_start:]
 incremental_messages = [tool T]
 ```
 
-随后只对增量 messages 调用：
+当前实现仍会从已有 chain 中取出增量 messages，但不再调用旧的
+`codec.encode_incremental()`，也不再通过固定 system prefix 的长度做截断。Session 会保留
+`previous_messages`、`updated_messages` 和当前 runtime token 流，调用：
 
 ```python
-incremental_ids = codec.encode_incremental(incremental_messages)
-```
-
-`encode_incremental()` 不是简单的 `tokenizer.encode(tool_text)`。它仍然调用 chat template：
-
-```python
-ids = apply_chat_template(
-    tokenizer,
-    incremental_messages,
-    add_generation_prompt=True,
+runtime_token_ids = buffer.prompt_ids + buffer.response_ids
+merged_token_ids, merged_response_mask, merged_response_logprobs = (
+    codec.merge_context_tokens(
+        previous_messages,
+        updated_messages,
+        runtime_token_ids,
+        buffer.response_mask,
+        buffer.response_logprobs,  # 请求 logprobs 时传入，否则为 None
+        tools=tools,
+    )
 )
-
-return ids[len(system_prompt_ids):]
 ```
 
-也就是说，其算法是：
+`merge_context_tokens()` 由 verl 的 `ContinuousTokenBuilder` 执行。它会：
+
+- 检查 `updated_messages` 是否只是对 `previous_messages` 的 append-only 延续；
+- 按 tool、user、system、assistant 分组，使用 suffix diff 构造新增 token；
+- 将当前 `tools` 传给增量合并，而不是只在首轮使用；
+- 根据模型族修正边界。例如 Qwen/MiniMax 在生成结束 token 后补换行，GLM 在歧义边界处删除重复 token；
+- 返回 `MergeResult`，由 `align_response_metadata()` 同步调整 mask 和 logprob。
+
+因此，增量路径更接近：
 
 ```text
-增量 messages
-  → 单独执行 chat template
-  → 得到带固定 system prefix 的 token
-  → 按 initialize_system_prompt() 的长度删除 system prefix
-  → 得到 incremental_ids
+previous messages + appended messages
+  → Continuous Token builder 做 token-level suffix diff
+  → 必要时插入/删除模型特定边界 token
+  → 对齐 response_mask/response_logprobs
+  → 写回 response_ids
 ```
 
-这些 token 会追加到 `response_ids`，但标记为不可训练：
+新增的上下文 token 和 builder 插入的边界 token 都标记为不可训练：
 
 ```python
-buffer.response_ids.extend(incremental_ids)
-buffer.response_mask.extend([0] * len(incremental_ids))
-buffer.response_logprobs.extend([0.0] * len(incremental_ids))
+buffer.response_ids = list(merged_token_ids[len(buffer.prompt_ids):])
+buffer.response_mask = list(merged_response_mask)
+buffer.response_logprobs = list(merged_response_logprobs or [])
 ```
+
+Session 还会检查合并结果没有修改不可变的 `prompt_ids`。assistant rewrite 仍有单独的
+rollback prepare 流程：先裁剪旧 assistant 及其 stale 的 turn separator / generation prompt，
+再用同一个 `merge_context_tokens()` 合并 replacement suffix。它与普通追加的入口相同，区别在于
+rollback 先恢复到 assistant 之前的 token 边界；不能把这一步误解为保留旧的
+`encode_incremental()` API。
 
 下一轮真正发送给 rollout backend 的上下文是：
 
 ```python
+# 概念式表示；实际以 merge_context_tokens() 返回的 merged_token_ids 为准
 context_ids = (
     initial_prompt_ids
     + previous_generated_ids
@@ -510,9 +526,13 @@ chain.message_tip_hash == incoming_prefix_hashes[N - 1]
 
 - 忽略随机的 `tool_call_id`；
 - 忽略 tool call 自身的随机 `id`；
-- 规范化 JSON 字符串和 dict 形式的 tool arguments。
+- 不对 tool arguments 做额外的 JSON 字符串/dict 语义归一化；比较的是 canonicalized message 中保留的 arguments。
 
-因此工具调用 ID 或 JSON 表示差异不会轻易制造假分叉。
+因此工具调用 ID 的差异不会轻易制造假分叉，但 arguments 的表示差异仍可能影响匹配。
+
+另外，默认开启的 `coalesce_reserved_exact_requests` 会按 provider-normalized 的
+`messages`、`tools` 和 `sampling_params` 指纹合并同一 Session 内的相同在途请求；这类请求不一定
+各自产生 sibling。若要保留独立样本，需要关闭该选项。
 
 ### 2. 普通线性延续
 
@@ -531,7 +551,7 @@ U → A → T
 Chain 1 是精确前缀，因此 Session：
 
 1. 复制 Chain 1 的 token buffer；
-2. 对 `T` 增量编码；
+2. 通过 Continuous Token 合并 `T` 的上下文 token；
 3. 调用模型生成 `A2`；
 4. 用更新后的状态替换原 Chain 1。
 
@@ -543,7 +563,8 @@ Chain 1: U → A → T → A2
 
 ### 3. 相同 prompt 多次采样产生 sibling
 
-连续三次发送相同 prompt：
+在请求不被同一在途指纹合并的情况下（例如顺序请求，或关闭
+`coalesce_reserved_exact_requests`），连续三次发送相同 prompt：
 
 ```text
 [U] → A1
@@ -574,6 +595,9 @@ U → A1 → follow-up
 3. 最近更新的 chain；
 4. 较新的 `chain_id`。
 
+这些条件还要经过请求的 `tools`/`active_tool_schemas`、assistant 消息数量和
+`reserved_chain_ids` 过滤；只比较 message prefix hash 不足以判断某条 chain 可安全复用。
+
 ### 4. 主 agent 与 sub-agent
 
 主 agent 轨迹：
@@ -588,7 +612,8 @@ sub-agent 请求：
 [system "researcher", user subtask]
 ```
 
-因为不存在匹配的消息前缀，Session 会对 sub-agent 的完整 messages 执行 `encode_full()` 并创建新 chain：
+因为不存在匹配的消息前缀，Session 会对 sub-agent 的完整 messages 执行
+`build_initial_tokens()` 并创建新 chain：
 
 ```text
 Chain 1: main context...
@@ -609,9 +634,11 @@ Chain 2: sub-agent context...
 
 新 messages 不再以旧 chain history 为前缀，因此会创建独立 chain。
 
-### 5. 最后一次 assistant rewrite
+### 5. 最后一次（包括 first-assistant）rewrite
 
-Uni-Agent 对最后一个 assistant 的改写有特殊 rollback 逻辑。
+Uni-Agent 对最后一个可回滚 assistant 的改写有特殊 rollback 逻辑。当前实现也覆盖
+first-assistant rewrite：在能唯一定位原 chain 时复用并 rollback；只有无法唯一定位、被占用或
+关闭相应复用开关时才创建新 chain。
 
 已有：
 
@@ -633,7 +660,8 @@ response_mask
 response_logprobs
 ```
 
-然后从记录的 `last_assistant_start` 重新编码新 suffix。
+同时会校验并删除被 rollback assistant 前的 response-side turn separator / generation prompt，
+再从记录的 `last_assistant_start` 通过普通增量路径合并新 suffix，避免重复 assistant 开始标记。
 
 结果不是保留两个分支：
 
@@ -650,7 +678,10 @@ U → error feedback → FIXED
 
 被 rollback 的模型 token 不进入最终训练数据。
 
-如果多个 chain 都可能是 rollback 目标，无法唯一判断应该改写哪一条，Session 会倾向于创建新 chain，避免覆盖错误 sibling。
+如果筛选后仍有多个同优先级 chain 都可能是 rollback 目标，且不存在更深或等深的 exact-prefix 候选，
+无法唯一判断应该改写哪一条，Session 会创建新 chain，避免覆盖错误 sibling。若 replacement context
+已耗尽可用 capacity，当前实现也会丢弃 abandoned chain；
+因此 rollback 不保证始终留下一个 prompt-only trajectory。
 
 ### 6. 并发分叉
 
@@ -689,11 +720,22 @@ Trajectory(
     prompt_ids=list(chain.buffer.prompt_ids),
     response_ids=list(chain.buffer.response_ids),
     response_mask=list(chain.buffer.response_mask),
-    response_logprobs=list(chain.buffer.response_logprobs),
-    reward_info=...,
+    response_logprobs=(list(chain.buffer.response_logprobs)
+                       if chain.buffer.response_logprobs else None),
     num_turns=...,
+    chain_id=chain.chain_id,
+    routed_experts=chain.buffer.routed_experts,
+    multi_modal_data=...,
+    extra_fields={
+        "min_global_steps": ...,
+        "max_global_steps": ...,
+        "mm_processor_kwargs": ...,  # 多模态样本需要时写入
+    },
 )
 ```
+
+`finished`、`reward_score` 和 `reward_metrics` 由 Agent Framework 在 Runner 返回后再附加，
+不是 Gateway finalize 时的 `reward_info` 字段。
 
 随后 Framework 做：
 
@@ -706,17 +748,27 @@ response_mask → loss_mask
 写入 TransferQueue
 ```
 
+如果启用 `mask_unfinished_episode`，Framework 还会把未完成 trajectory 的 response/loss mask
+置为 0；因此 `response_mask=1` 表示 rollout 阶段的 sampled-token provenance，不保证该位置最终
+一定进入训练损失。
+
 因此更准确地说：
 
-> Uni-Agent 的 trajectory 是在 rollout 期间在线构造的；finalize 只是 materialize，Framework 只是 tensorize，不存在最终的 message-to-token 轨迹重建过程。
+> Uni-Agent 的 trajectory 是在 rollout 期间在线构造的；finalize 只是 materialize，Framework 主要负责
+> 张量化、奖励/状态附加和可选后处理，不存在最终的 message-to-token 轨迹重建过程。
 
 这意味着 chain buffer 一旦在中途构造错误，finalize 阶段不会根据完整 messages 自动纠正。
 
 ### 分叉最终如何进入训练
 
-每条 chain 会 materialize 成一条独立 `Trajectory`，并携带同一份 session-level reward info。Framework 支持两种保留策略：
+每条 chain 会 materialize 成一条独立 `Trajectory`；Runner 返回后，Framework 再把同一份
+session-level `finished`/`reward_score`/`reward_metrics` 挂到该 session 保留的 trajectories 上。当前处理顺序是
+Gateway finalize → trajectory selection → 可选 `trajectory_postprocessor` → reward scoring →
+TransferQueue/logging。Framework 支持两种保留策略：
 
-- `trajectory_selection="all"`：所有分支进入后续打分和 TransferQueue；
+- `trajectory_selection="all"`：所有分支先保留；经过可选 postprocessor 过滤、裁剪或重排后写入
+  后续 TransferQueue。启用 RewardLoopWorker 时，当前默认只对 session 保留列表中的代表 trajectory
+  评分，再将结果广播到该 session 的其他分支，并不等于每个分支独立重算 reward；
 - `trajectory_selection="longest"`：只保留 trainable token 数最多的分支。
 
 `longest` 大致按以下优先级选择：
@@ -725,133 +777,61 @@ response_mask → loss_mask
 response_mask 中 1 的数量
   → response_ids 总长度
   → turn 数量
-  → 输出顺序
+  → 输出索引（当前 max key 下较晚项优先）
 ```
 
 ---
 
-## 九、关键风险：增量 chat template 与完整模板化不一定等价
+## 九、关键风险：Continuous Token 已修正边界，但不等于全历史 parity
 
-Claude Code 在真实请求层面，每个 turn 都会发送完整 message list。普通无状态模型服务通常会对每次请求的完整 messages 执行 chat template 和 tokenize。
+Claude Code 在请求层面仍会发送完整 message list。当前 Gateway 命中已有 chain 后，不是把
+`ΔM` 单独执行一次 chat template 再删除 system prefix，而是把已有 runtime token 流交给
+`ContinuousTokenBuilder.merge_context_tokens(previous_messages, updated_messages, tools=tools)`。
 
-Uni-Agent 虽然收到完整 message list，但命中已有 chain 后，只模板化新增 messages。
+该 builder 会对追加消息做 append-only 检查和 token-level suffix diff，并由模型族实现处理边界：
 
-设完整模板化/tokenize 函数为：
+- 包括 Qwen/MiniMax 在生成结束 token 后补缺失的换行；
+- 包括 GLM 在 observation/user 歧义边界处删除重复 token；其他模型族还有各自的 builder 边界规则；
+- `MergeResult` 记录插入或删除的 token，`align_response_metadata()` 同步修正 mask 和 logprob。
 
-```text
-F(messages, tools)
-```
-
-第一轮：
-
-```text
-P0 = F(M0, tools)
-模型生成 G0
-```
-
-第二轮真实完整模板化应该是：
-
-```text
-P1 = F(M0 + assistant(G0) + ΔM, tools)
-```
-
-Uni-Agent 当前构造的是：
+因此旧文中的下面这条公式已经不再描述当前实现：
 
 ```text
 P1' = P0 + G0 + strip_system(F(ΔM, tools=None))
 ```
 
-当前实现隐含要求：
+当前路径更接近：
 
 ```text
-P1 == P1'
+runtime_token_ids
+  + CT(previous_messages, updated_messages, tools)
+  + model-specific boundary edits
+  → next context_ids
 ```
 
-但代码没有验证这个 token-level 等式。
+### 1. 仍需区分 CT suffix 校验和完整历史 parity
 
-### 1. Chat template 一般不保证可拼接
+Continuous Token 的 `render_delta_token_id()` 会基于 synthetic anchor 对用于构造 suffix 的
+prefix/full 模板做 token 前缀检查，但 Gateway 并不会在每一轮都把真实完整 history 的全量模板结果
+与最终 runtime token 流逐 token 比较。
+因此仍需验证：
 
-完整模板可能：
+- 模型族 builder 对当前 chat template 的边界规则是否完整；
+- append-only 消息分组是否覆盖 Anthropic content blocks、reasoning 和 tool-use 变体；
+- 工具 schema、`apply_chat_template_kwargs` 或 tokenizer 更新后，suffix diff 是否仍保持一致。
 
-- 在 assistant 和 tool 之间插入结束标记；
-- 合并连续 user/tool messages；
-- 根据完整 history 选择不同格式；
-- 根据是否存在 tool call 改变 assistant 边界；
-- 将 tools 动态注入 system prompt；
-- 对最后一条消息采用特殊模板；
-- 对 reasoning/tool-use block 采用不同包装；
-- 校验或调整 user/assistant 角色交替。
+### 2. 多模态增量有明确限制
 
-因此一般不能假设：
+当前 `merge_context_tokens()` 对增量 image/video data 会显式报错；多模态首轮可以通过 processor
+构造 token，但增量媒体上下文尚未由 Gateway CT 路径支持。不能把文本增量路径的结论直接推广到多模态。
 
-```text
-F(history + delta)
-=
-F(history) + strip_prefix(F(delta))
-```
+### 3. Anthropic adapter 仍是独立的一致性边界
 
-### 2. Assistant 结束 token 可能缺失或重复
-
-考虑模板：
-
-```text
-<|im_start|>assistant
-{assistant_content}<|im_end|>
-<|im_start|>tool
-{tool_result}<|im_end|>
-<|im_start|>assistant
-```
-
-第一轮 rollout backend 返回的 `output.token_ids` 是否包含 `<|im_end|>`，取决于 backend 对 stop token 的处理。
-
-完整重模板化会根据结构化 assistant message 明确插入 `<|im_end|>`。增量拼接则假定这一边界已经正确存在于原始生成 token 或增量模板中。
-
-如果两边都不插入，会缺失；如果两边都插入，会重复。
-
-### 3. Tool schema 在增量路径中没有重新传入
-
-首轮：
-
-```python
-encode_full(messages, tools=tools)
-```
-
-增量轮：
-
-```python
-encode_incremental(incremental_messages)
-```
-
-`encode_incremental()` 没有 `tools` 参数。Session 会要求复用 chain 的 tool schema 与新请求相等，但“schema 相等”并不证明模板只需在第一轮渲染一次。
-
-### 4. Tokenizer 也不保证字符串级拼接等价
-
-即使模板字符串看起来满足：
-
-```text
-full_text = old_text + delta_text
-```
-
-也不普遍保证：
-
-```python
-tokenize(full_text)
-==
-tokenize(old_text) + tokenize(delta_text)
-```
-
-BPE/tokenizer 可能跨字符串边界改变切分。消息之间有稳定特殊 token 时风险较低，但这仍然需要验证，而不是由 tokenizer 接口保证。
-
-### 5. Anthropic adapter 的转换可能依赖完整列表
-
-Claude Code 的 Anthropic Messages 请求会先被转换成内部 OpenAI-like messages。该过程会：
-
-- 转换 `tool_use` 和 `tool_result`；
-- 规范化 assistant content blocks；
-- 处理 system 字段；
-- 将 mid-list system reminder 折叠进 user message。
-
-Adapter 每次确实处理完整请求，但 Session 匹配 chain 后只 tokenize 新增的内部 messages，因此 adapter 的完整列表语义不等于完整 chat-template 语义。
+Anthropic 请求会先转换成内部消息，再参与 prefix 匹配和 CT 合并。当前 adapter 会把中间位置的
+system 内容折叠为 user 侧的 `<system-reminder>`，丢弃 thinking block（并在必要时警告 prefix drift），
+同时拒绝 `redacted_thinking`。因此 `tool_use`、`tool_result`、system 字段及 content blocks 的
+规范化必须与对应模型族 builder 一致；adapter 能正确转换请求，也不自动证明 CT suffix 与标准
+完整模板结果逐 token 相同。
 
 ---
 
@@ -864,11 +844,12 @@ Adapter 每次确实处理完整请求，但 Session 匹配 chain 后只 tokeniz
 如果 Claude Code 在推理时仍连接同一个 Uni-Agent Gateway，那么：
 
 ```text
-训练 rollout：增量模板化
-推理 rollout：增量模板化
+训练 rollout：Continuous Token 增量合并
+推理 rollout：Continuous Token 增量合并
 ```
 
-两者内部逻辑一致。这里的问题不是训练与该 Gateway 推理不一致，而是这个 Gateway 送给模型的 token 是否等于标准完整模板化结果。
+两者内部逻辑一致。这里的问题不是训练与该 Gateway 推理不一致，而是当前模型族的
+Continuous Token builder 是否覆盖了标准完整模板的全部边界语义。
 
 ### 场景 B：真实部署使用普通无状态模型服务
 
@@ -886,7 +867,7 @@ Adapter 每次确实处理完整请求，但 Session 匹配 chain 后只 tokeniz
 ```text
 首轮完整编码
   + 历史 sampled token
-  + 增量 messages 的独立模板结果
+  + Continuous Token 合并的增量 messages
 ```
 
 那么两者不一定一致。
@@ -899,11 +880,10 @@ Adapter 每次确实处理完整请求，但 Session 匹配 chain 后只 tokeniz
   再检查 token prefix 能否复用 KV cache
 
 当前 Uni-Agent：
-  先假设 message 增量能够模板化拼接
-  直接构造下一轮 token truth
+  通过 Continuous Token builder 构造并修正下一轮 token 流
 ```
 
-前者只优化计算，不改变语义；后者在可拼接假设不成立时会改变模型实际看到的 token。
+前者只优化计算，不改变语义；后者依赖 builder 对具体模型模板的覆盖和测试。
 
 ---
 
@@ -912,10 +892,11 @@ Adapter 每次确实处理完整请求，但 Session 匹配 chain 后只 tokeniz
 现有 continuation 测试通常构造：
 
 ```python
+# 概念性表示；实际由 codec.merge_context_tokens() 返回
 expected_prompt_ids = (
     initial_prompt_ids
     + generated_tool_call_ids
-    + encode_incremental(tool_message)
+    + continuous_token_context_delta(previous_messages, updated_messages, tools)
 )
 ```
 
@@ -928,35 +909,43 @@ expected_prompt_ids = (
 但它没有证明：
 
 ```python
-encode_full(complete_second_turn_messages, tools)
+# 概念性完整模板结果
+full_template(complete_second_turn_messages, tools)
 ==
 initial_prompt_ids
 + generated_tool_call_ids
-+ encode_incremental(tool_message)
++ continuous_token_context_delta(previous_messages, updated_messages, tools)
 ```
 
-因此当前测试属于 implementation consistency test，而不是 full-template parity test。
+当前 main 已增加 Continuous Token 的模型特定边界测试；但如果没有把真实完整 history 的
+`full_template(...)` 与最终 runtime token 流逐 token 对比，仍然只能证明实现内部一致，不能证明
+完整模板 parity。
 
-代码中也保留了：
+旧实现中的：
 
 ```python
 # TODO: check if delta tokenization is better than remove_system_prompt
 ```
 
-说明 `remove_system_prompt` 只是当前增量策略，并没有建立通用的模板等价性保证。
+以及 `remove_system_prompt` 路径已经被 Continuous Token 集成替代；这段 TODO 不能再作为当前
+main 的实现依据。
 
 ---
 
-## 十二、更稳妥的设计：完整模板是语义真值，增量只是优化
+## 十二、进一步增强：用完整模板检查非 assistant 结构
 
-更可靠的原则应该是：
+当前 Continuous Token 已经把增量合并从未经处理的 prefix strip 提升为带模型特化边界处理的优化，
+但仍可以把完整 message list 的 canonical 模板结果作为独立比较基准。它不能无条件当作整个 runtime
+token 流的绝对真值：某些模板会重写或省略历史 assistant reasoning/thinking，而旧 assistant token
+及其 logprob 必须保留 token-in-token-out provenance。更可靠的原则是：
 
-> 每轮先从完整 message list 计算模型应该看到的 token；只有 token 前缀验证通过，才允许复用已有 chain buffer。
+> 用完整模板检查稳定的非 assistant 结构和边界；只有在模型模板保证历史 assistant token 不会被重写时，
+> 才把严格 token 前缀检查作为复用已有 chain buffer 的充分条件。
 
 每一轮执行：
 
 ```python
-full_ids = encode_full(
+full_ids = full_template(
     messages,
     tools=tools,
     image_data=full_image_data,
@@ -969,15 +958,18 @@ old_context_ids = (
 )
 ```
 
+这里的 `full_ids` 是 canonical comparator；它对历史 assistant token 的改写不能直接覆盖
+`old_context_ids` 中已经采样的 token。
+
 然后验证：
 
 ```python
 full_ids[:len(old_context_ids)] == old_context_ids
 ```
 
-### 情况 1：严格 token 前缀成立
+### 情况 1：严格 token 前缀成立且模板保留历史 assistant token
 
-可以安全计算：
+如果严格 token 前缀成立，可以安全计算：
 
 ```python
 incremental_ids = full_ids[len(old_context_ids):]
@@ -991,24 +983,30 @@ response_mask += [0] * len(incremental_ids)
 response_logprobs += [0.0] * len(incremental_ids)
 ```
 
-此时增量复用只是性能优化，完整模板结果仍然是 token truth。
+此时增量复用只是性能优化，完整模板结果可作为 token truth。若模板不提供历史 assistant 保留保证，
+则只能把这个结果用于非 assistant 边界的校验，不能据此重写旧 sampled token。
 
 ### 情况 2：严格 token 前缀不成立
 
-说明新一轮完整模板修改了旧 token 上下文，例如：
+这可能表示新一轮完整模板修改了稳定的旧 token 上下文，也可能只是 canonical 模板重写了历史
+assistant reasoning/thinking。需要先区分两类情况：
 
-- assistant 边界不同；
-- tool schema 渲染发生变化；
-- parser 重写 assistant message；
-- chat template 根据完整历史改变格式；
-- tokenizer 边界发生变化。
+- 非 assistant 结构、tool schema 或边界发生变化，例如：
 
-这时不能继续把 delta 拼到旧 buffer。
+  - assistant 边界不同；
+  - tool schema 渲染发生变化；
+  - chat template 根据完整历史改变格式；
+  - tokenizer 边界发生变化。
+
+- 仅历史 assistant reasoning/thinking 被 canonical 模板重写；这不是旧 sampled token 可以被静默替换的理由。
+
+第一类情况不能继续把 delta 静默拼到旧 buffer；第二类情况应保留旧 sampled token，改用
+Continuous Token 的模型族边界校验或切分新 trajectory。
 
 最安全的处理是：
 
 1. 将旧 chain materialize；
-2. 从当前 `full_ids` 创建一条新 trajectory；
+2. 对稳定的非 assistant 结构从当前 `full_ids` 创建一条新 trajectory；
 3. 当前轮新生成 token 作为 `response_ids`，mask 为 1；
 4. 不把旧 sampled token 强行映射到新模板下。
 
@@ -1034,7 +1032,8 @@ TurnSnapshot(
 3. 只有严格对齐的 sampled token 才继承 `mask=1`；
 4. 被客户端重写或重新模板化的位置降为 context-only，或切分成新 trajectory。
 
-这种设计更接近“每轮完整 token snapshot 是事实，跨轮拼接需要证明”，而不是“在线 buffer 是事实，完整模板等价性靠假设”。
+这种校验设计可以在保留在线 buffer 和低 finalize 成本的同时，发现 Continuous Token builder
+与真实完整模板之间的差异。
 
 ---
 
@@ -1068,17 +1067,18 @@ Token 层：
 
 两者的主要取舍是：
 
-| 维度 | Uni-Agent 在线 chain buffer | Message Tree + turn snapshot |
-|---|---|---|
-| 运行时结构 | 简单，直接维护训练序列 | 需要维护 tree 和 turn records |
-| sampled token 保存 | 直接保留 backend token | 每轮 snapshot 保留 |
-| 多轮拼接 | rollout 时完成 | 导出时验证并完成 |
-| finalize 成本 | 很低 | 较高 |
-| 模板一致性 | 依赖增量可拼接假设 | 可用 full prompt snapshot 验证 |
-| rewrite/compaction | rollback 或新 chain | tree 分叉后按 token provenance 处理 |
-| 错误恢复 | buffer 构造错误会直接进入训练 | 导出阶段仍可检测不一致 |
+| 维度               | Uni-Agent 在线 chain buffer                          | Message Tree + turn snapshot        |
+| ------------------ | ---------------------------------------------------- | ----------------------------------- |
+| 运行时结构         | 简单，直接维护训练序列                               | 需要维护 tree 和 turn records       |
+| sampled token 保存 | 直接保留 backend token                               | 每轮 snapshot 保留                  |
+| 多轮拼接           | rollout 时完成                                       | 导出时验证并完成                    |
+| finalize 成本      | 很低                                                 | 较高                                |
+| 模板一致性         | CT suffix/boundary 校验；仍可增加 full prompt parity | 可用 full prompt snapshot 验证      |
+| rewrite/compaction | rollback 或新 chain                                  | tree 分叉后按 token provenance 处理 |
+| 错误恢复           | buffer 构造错误会直接进入训练                        | 导出阶段仍可检测不一致              |
 
-在线构造本身并不是错误。只要每次追加之前验证完整 token prefix，Uni-Agent 的方案可以同时保留低 finalize 成本和 token 正确性。真正危险的是：
+在线构造本身并不是错误。当前实现已在 CT 合并阶段验证 append-only 和局部 suffix；若再增加完整
+token prefix parity 检查，便能同时保留低 finalize 成本和更强的 token 正确性。真正危险的是：
 
 > 把 message 前缀相等误当成 chat-template token 前缀相等。
 
@@ -1088,9 +1088,9 @@ Token 层：
 
 Uni-Agent 的轨迹管理有三个核心特征。
 
-第一，它把 GatewaySession 当作 token trajectory owner。模型生成 token 直接来自 rollout backend，工具观察和用户续接通过增量 chat template 插入，并用 `response_mask` 区分是否参与训练。
+第一，它把 GatewaySession 当作 token trajectory owner。模型生成 token 直接来自 rollout backend，工具观察和用户续接通过 Continuous Token 增量合并插入，并用 `response_mask` 区分是否参与训练。
 
-第二，它用扁平的多 `ChainState` 结构处理 message 分叉。message prefix hash 用于选择 chain，相同 prompt 的重复采样形成 sibling，sub-agent 和上下文压缩形成新 chain，最后一次 assistant rewrite 则通过 rollback 原地替换。
+第二，它用扁平的多 `ChainState` 结构处理 message 分叉。message prefix hash 用于选择 chain，相同 prompt 的重复采样形成 sibling，sub-agent 和上下文压缩形成新 chain；可唯一定位的 latest/first assistant rewrite 通过 rollback 原地替换，否则创建新 chain。
 
 第三，它没有 finalize 阶段的轨迹重建。最终训练序列直接来自 chain buffer：
 
@@ -1099,16 +1099,18 @@ prompt_ids + response_ids → input_ids
 response_mask → loss_mask
 ```
 
-因此当前实现的关键正确性前提是：
+因此当前实现的关键正确性边界是：
 
 ```text
-完整新 history 的 chat-template token
-==
-已有 token context
-+ 增量 messages 的独立模板 token
+append-only messages
+  → Continuous Token suffix diff
+  → 模型特定边界修正
+  → mask/logprob 对齐
 ```
 
-这个等式对于任意 chat template、tool parser 和 tokenizer 都不自动成立，尤其在 Claude Code、Anthropic content blocks、tool use、assistant rewrite 和动态工具模板场景下需要真实模型 tokenizer 的逐轮验证。
+普通追加路径已经处理了旧实现中的 system-prefix strip 和常见边界问题，但对任意 chat template、tool parser
+和 tokenizer 仍不自动提供全历史 parity，尤其在 Claude Code、Anthropic content blocks、tool use、
+assistant rewrite 和动态工具模板场景下需要真实模型 tokenizer 的逐轮验证。
 
 更稳妥的方向是：
 
@@ -1118,7 +1120,7 @@ token prefix 检查 = 是否允许增量复用的判据
 chain buffer = 通过验证后的在线缓存
 ```
 
-换言之，增量编码应该是一种有验证的优化，而不应该成为未经验证的 token 语义来源。
+换言之，当前 Continuous Token 是有局部验证的增量优化；完整模板 parity 仍应作为额外的回归检查。
 
 ---
 
@@ -1128,8 +1130,10 @@ chain buffer = 通过验证后的在线缓存
 
 ```text
 uni_agent/gateway/session/codec.py
-  MessageCodec.encode_full()
-  MessageCodec.encode_incremental()
+  MessageCodec.build_initial_tokens()
+  MessageCodec.merge_context_tokens()
+  MessageCodec.merge_assistant_tokens()
+  ContinuousTokenBuilder.align_response_metadata()
 
 uni_agent/gateway/session/session.py
   TrajectoryBuffer
@@ -1157,3 +1161,20 @@ tests/uni_agent/gateway/test_gateway_actor_on_cpu.py
 tests/uni_agent/gateway/test_session_multiple_chains_on_cpu.py
 tests/uni_agent/framework/test_generate_sequences_on_cpu.py
 ```
+
+## 核验基准
+
+本文按 2026-09-20 可见的 Uni-Agent [`main`](https://github.com/verl-project/uni-agent/tree/main) 核对。
+Continuous Token 路径由 [PR #101](https://github.com/verl-project/uni-agent/pull/101) 引入，并在
+[PR #164](https://github.com/verl-project/uni-agent/pull/164) 继续整合；first-assistant rollback、奖励 API
+和 trajectory postprocessor 又分别在
+[PR #123](https://github.com/verl-project/uni-agent/pull/123)、
+[PR #109](https://github.com/verl-project/uni-agent/pull/109) 和
+[PR #143](https://github.com/verl-project/uni-agent/pull/143) 后继续变化；正文按当前 `main`
+实现，而不是只按早期某个提交核对。实现细节以当前的
+[`codec.py`](https://raw.githubusercontent.com/verl-project/uni-agent/main/uni_agent/gateway/session/codec.py)、
+[`session.py`](https://raw.githubusercontent.com/verl-project/uni-agent/main/uni_agent/gateway/session/session.py)、
+[`types.py`](https://raw.githubusercontent.com/verl-project/uni-agent/main/uni_agent/gateway/session/types.py)
+和 [`framework.py`](https://raw.githubusercontent.com/verl-project/uni-agent/main/uni_agent/framework/framework.py)
+为准；Gateway 的轨迹语义见
+[官方文档](https://uni-agent.readthedocs.io/en/latest/concepts/gateway-and-trajectories.html)。
