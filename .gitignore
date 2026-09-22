@@ -2,7 +2,11 @@
 .DS_Store
 
 # Local source materials for blog research
+/raw/
 /content/references/
+
+# Intermediate extraction and analysis cache
+/research/cache/
 
 # Obsidian local UI state and cache
 content/.obsidian/workspace.json

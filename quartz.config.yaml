@@ -12,6 +12,7 @@ configuration:
     - private
     - templates
     - .obsidian
+    - references
   theme:
     # Prefer platform-native fonts and avoid runtime Google Fonts requests.
     fontOrigin: local

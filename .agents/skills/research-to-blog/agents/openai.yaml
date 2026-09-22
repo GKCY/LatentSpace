@@ -1,0 +1,7 @@
+interface:
+  display_name: "Research to Blog"
+  short_description: "Read raw research and prepare reviewed blog changes"
+  default_prompt: "Use $research-to-blog to read the selected raw materials and prepare a reviewable article proposal."
+
+policy:
+  allow_implicit_invocation: false

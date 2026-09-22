@@ -117,6 +117,15 @@ Agent Lightning 还选择自托管 Kubernetes，而不是依赖 Modal、Volcano 
 
 监控系统会保存训练和验证 rollout、状态、模型请求、奖励、token/turn 统计和 pod 日志。作者正是通过这些记录发现了编码训练中的 reward hacking，而不是只看最终成功率。[§3.2–§3.4，PDF 第 9–10 页](https://arxiv.org/pdf/2608.17528#page=10)
 
+
+### 3.3 从可接入 Harness 到可扩展 Harness Pool
+
+Agent Lightning 解决的是“已有 Harness 怎样进入训练闭环”：Gateway 记录 rollout 事件，Controller 管理执行状态，Trainer 按 rollout 级别组装样本。MiMo-V2.6 关注的是当 Harness 数量和 payload 规模继续增大后，控制面怎样不被数据面拖垮。它用 Harness Pool 让固定数量的持久 actor 承载多个租户，再用 Payload Porter 把 reward、长度和对象 key 等轻量元数据与 token、logprob、MoE 路由和多模态输入分开存储。[MiMo-V2.6 技术报告，第 27–29 页](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL/resolve/main/MiMo_V2_6_technical_report.pdf#page=27)
+
+两套设计关注点不同，但可以放在同一条演进线上：Agent Lightning 先把 Harness 的隐状态和训练统计边界显式记录下来，MiMo 再把这些记录拆成可调度的元数据与重 payload。前者解决接入正确性，后者解决多租户、长轨迹和多模态数据的容量问题。
+
+MiMo 对 Harness 的另一项取舍是把生产 Harness 拆成可重组的 mini-harness，并在多个已见和未见 Harness 上训练。开放的 Distill-Qwen-9B 实验中，多 Harness RL 在七个 Harness 上的平均结果高于只用单一 Harness 的设置，但报告没有提供每个组件的独立消融。[MiMo-V2.6 技术报告，第 33–36 页](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL/resolve/main/MiMo_V2_6_technical_report.pdf#page=35) 这支持“受控多样性有助于迁移”的较窄判断，不能直接推出所有生产 Harness 都应拆成同样的组件。
+
 ## 4. 三类 Agent 实验说明了什么
 
 论文没有只在一个特制环境里验证框架，而是把同一套控制面接到三类 Harness。结果如下，数字均来自论文的验证曲线或最终 checkpoint：

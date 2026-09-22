@@ -307,6 +307,15 @@ while not stop:
 
 真实实现还要处理并发的 weight update、工具调用的幂等性、重复提交和 checkpoint crash；上面的代码只表达数据契约，不代表可以直接替换框架实现。
 
+
+### MiMo-V2.6：把 partial rollout 放进大批量混合调度
+
+MiMo-V2.6 给出了一个很具体的生产案例：每个训练 step 采样 1,568 个 prompt，每个 prompt 生成 16 条 rollout，约 25K 条轨迹进入同一轮训练；单条序列平均约 110K–150K token。报告因此把 partial rollout 和数据混合放在同一个调度问题里：收齐当前 batch 后，中断仍在运行的长序列，下一轮再继续，并用更大的 batch 摊薄续写前的 re-prefill 成本。[MiMo-V2.6 技术报告，第 8–9 页](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL/resolve/main/MiMo_V2_6_technical_report.pdf#page=9)
+
+更难的是不同数据源的长尾并不相同。报告统计 25 个来源后发现，生成 token 数的差异可达 90 倍，rollout 时长的差异可达 66 倍。Sample Mixer 因此不只维护一个 partial buffer，还按来源记录目标样本量、接受率和耗时，用自适应并发、预测式派发、deficit-corrected scheduling 和 sample replay 保持混合分布。[MiMo-V2.6 技术报告，第 29–31 页](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL/resolve/main/MiMo_V2_6_technical_report.pdf#page=29)
+
+这给 scheduler 的设计补了一个边界：**partial 状态不仅是“还没完成的请求”，还是某个数据来源尚未兑现的配额。** 因此除了 `partial_span` 和 `resume_prefill_tokens`，还应按 source 记录已完成样本、被 replay 的样本、实际 rollout 时长和训练 batch 中的占比。否则整体吞吐上升时，可能只是短任务更快填满 batch，长任务和低接受率来源却逐渐消失。
+
 ## 八、主流框架的选择差异
 
 以下表格综合 [Hugging Face 对 16 个异步 RL 库的比较](https://huggingface.co/blog/async-rl-training-landscape) 和各项目当前文档。它的用途是定位设计空间，不是替代具体 commit 的代码审计。
