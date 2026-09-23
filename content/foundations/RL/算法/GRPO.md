@@ -1,5 +1,7 @@
 # GRPO: Group Relative Policy Optimization
 
+数学前置知识见 [[强化学习的数学基础：从策略梯度到PPO与GRPO|强化学习的数学基础：从策略梯度到 PPO 与 GRPO]]，其中推导了策略梯度、baseline、概率比与组内归一化的关系。
+
 ## 概述
 
 GRPO（Group Relative Policy Optimization）由 DeepSeek 在 2024 年的 [DeepSeekMath](https://arxiv.org/abs/2402.03300v3) 论文中提出，并首先用于训练 DeepSeekMath-RL 7B；之后，[DeepSeek-R1 v2](https://arxiv.org/abs/2501.12948v2) 和 DeepSeek-R1-Zero 也采用了 GRPO。
@@ -248,15 +250,15 @@ def grpo_loss(
 
 ## 5. 与典型 LLM PPO 的对比
 
-| 特性 | 典型 LLM PPO | 原始 outcome-supervised GRPO |
-|---|---|---|
-| 优势估计 | 通常基于 learned value function 和 GAE | 同 prompt 的组内归一化奖励 |
-| Critic/value model | 通常需要；可独立或共享部分参数 | 不需要 learned value model |
-| Reward source | 规则、环境或 reward model | 同样需要规则、环境或 reward model |
-| Reference policy | 常用于 KL 正则 | 原始 formulation 也可使用 |
-| Rollout 要求 | 不要求每个 prompt 固定采样一组响应 | 每个 prompt 需要 $G$ 个响应 |
-| 计算权衡 | 增加 value model 的训练成本 | 省去 value model，但增加组采样成本 |
-| Token 级信用分配 | GAE 可给不同 token 不同优势 | 终局奖励版本给同一响应所有 token 相同优势 |
+| 特性               | 典型 LLM PPO                           | 原始 outcome-supervised GRPO              |
+| ------------------ | -------------------------------------- | ----------------------------------------- |
+| 优势估计           | 通常基于 learned value function 和 GAE | 同 prompt 的组内归一化奖励                |
+| Critic/value model | 通常需要；可独立或共享部分参数         | 不需要 learned value model                |
+| Reward source      | 规则、环境或 reward model              | 同样需要规则、环境或 reward model         |
+| Reference policy   | 常用于 KL 正则                         | 原始 formulation 也可使用                 |
+| Rollout 要求       | 不要求每个 prompt 固定采样一组响应     | 每个 prompt 需要 $G$ 个响应               |
+| 计算权衡           | 增加 value model 的训练成本            | 省去 value model，但增加组采样成本        |
+| Token 级信用分配   | GAE 可给不同 token 不同优势            | 终局奖励版本给同一响应所有 token 相同优势 |
 
 因此，GRPO 的主要优势是省去 value model，而不是无条件获得“两倍效率”或“更高样本效率”。实际吞吐、显存和样本效率取决于 group size、生成长度、KL/reference、reward model、参数共享和分布式实现。
 

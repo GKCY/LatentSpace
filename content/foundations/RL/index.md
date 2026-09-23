@@ -7,6 +7,7 @@ description: 强化学习算法、Agentic RL、训练系统与工程实践。
 
 强化学习算法、Agentic RL、训练系统与工程实践。
 
+- [[foundations/RL/算法/强化学习的数学基础：从策略梯度到PPO与GRPO|强化学习的数学基础：从策略梯度到 PPO 与 GRPO]]：从期望与对数概率推导策略梯度，串起 baseline、GAE、重要性采样、PPO 裁剪和 GRPO 组内优势。
 - [[foundations/RL/recipe分析/deepseek-v4.1-post-training|DeepSeek-V4.1 后训练解读：任务合成、异步 RL 与推理预算]]：从任务与环境扩展解释 Agent 训练流程，分析异步调度、effort 奖励、多教师 OPD 和协作训练的收益与边界。
 - [[foundations/RL/系统/训练稳定性/精度/训推一致性/训推一致性诊断：从概率偏差到根因定位|训推一致性诊断：从概率偏差到根因定位]]：用同权重、同前缀实验发现概率差异，再定位数据链路、缓存、数值算子和 MoE 路由，并验证它对训练的影响。
 - [[foundations/RL/recipe分析/t1-terminal-agent-rl|T1 论文分析：长程终端 Agent 的 PPO 训练 Recipe]]：分析断言计数奖励、critic、TITO、路由重放与长尾调度，并核查实验收益和复现边界。
