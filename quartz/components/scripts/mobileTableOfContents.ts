@@ -15,36 +15,6 @@ function setupMobileTableOfContents() {
 
   let lastFocused = null
   let focusFrame
-  let activeFrame
-  let activeId
-
-  const tocLinks = Array.from(document.querySelectorAll("a[data-for]"))
-  const headings = Array.from(document.querySelectorAll("article h1[id], article h2[id], article h3[id]"))
-
-  const updateActiveHeading = () => {
-    activeFrame = undefined
-    let nextId = headings[0]?.id
-
-    for (const heading of headings) {
-      if (heading.getBoundingClientRect().top > 112) break
-      nextId = heading.id
-    }
-
-    if (!nextId || nextId === activeId) return
-    activeId = nextId
-
-    for (const link of tocLinks) {
-      const active = link.getAttribute("data-for") === activeId
-      link.classList.toggle("is-active", active)
-      if (active) link.setAttribute("aria-current", "location")
-      else link.removeAttribute("aria-current")
-    }
-  }
-
-  const scheduleActiveHeading = () => {
-    if (activeFrame !== undefined) return
-    activeFrame = requestAnimationFrame(updateActiveHeading)
-  }
 
   const setOpen = (open, restoreFocus = false) => {
     root.classList.toggle("is-open", open)
@@ -109,21 +79,15 @@ function setupMobileTableOfContents() {
   closeButton.addEventListener("click", close)
   links.forEach((link) => link.addEventListener("click", closeAfterNavigation))
   document.addEventListener("keydown", onKeyDown)
-  window.addEventListener("scroll", scheduleActiveHeading, { passive: true })
-  window.addEventListener("resize", scheduleActiveHeading)
   desktopMedia.addEventListener("change", closeOnDesktop)
-  scheduleActiveHeading()
 
   window.addCleanup(() => {
     setOpen(false)
-    if (activeFrame !== undefined) cancelAnimationFrame(activeFrame)
     trigger.removeEventListener("click", open)
     backdrop.removeEventListener("click", close)
     closeButton.removeEventListener("click", close)
     links.forEach((link) => link.removeEventListener("click", closeAfterNavigation))
     document.removeEventListener("keydown", onKeyDown)
-    window.removeEventListener("scroll", scheduleActiveHeading)
-    window.removeEventListener("resize", scheduleActiveHeading)
     desktopMedia.removeEventListener("change", closeOnDesktop)
   })
 }

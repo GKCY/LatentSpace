@@ -2,6 +2,7 @@ import { i18n } from "../i18n"
 import { QuartzComponent, QuartzComponentConstructor, QuartzComponentProps } from "./types"
 
 import mobileTocScript from "./scripts/mobileTableOfContents"
+import tableOfContentsScript from "./scripts/tableOfContents"
 
 type TocEntry = {
   depth: number
@@ -101,7 +102,7 @@ export default (() => {
     )
   }
 
-  MobileTableOfContents.afterDOMLoaded = mobileTocScript
+  MobileTableOfContents.afterDOMLoaded = tableOfContentsScript + "\n" + mobileTocScript
 
   return MobileTableOfContents
 }) satisfies QuartzComponentConstructor
