@@ -23,13 +23,13 @@ DeepSeek Harness（`dsh`）最有价值的设计，是把 Agent 的能力组合�
 
 ### 1.1 Harness 在这里负责什么
 
-| 层 | 本文中的含义 | dsh 的位置 |
-|---|---|---|
-| 模型 | 根据上下文生成文本、推理内容和动作 | 通过 adapter 接入，权重不属于 harness |
-| Agent harness | 组织上下文、循环、工具、状态、交互与资源 | dsh 的主要职责 |
-| 任务环境 | 仓库、shell、文件系统、依赖、网络和外部服务 | 由本地或远端 provider 连接 |
-| Benchmark evaluator | 加载题目、执行独立 verifier、计算任务成功率 | 需要另外集成 |
-| RL trainer | 计算 reward/advantage/loss，更新并同步权重 | 需要另外集成 |
+| 层                  | 本文中的含义                                | dsh 的位置                            |
+| ------------------- | ------------------------------------------- | ------------------------------------- |
+| 模型                | 根据上下文生成文本、推理内容和动作          | 通过 adapter 接入，权重不属于 harness |
+| Agent harness       | 组织上下文、循环、工具、状态、交互与资源    | dsh 的主要职责                        |
+| 任务环境            | 仓库、shell、文件系统、依赖、网络和外部服务 | 由本地或远端 provider 连接            |
+| Benchmark evaluator | 加载题目、执行独立 verifier、计算任务成功率 | 需要另外集成                          |
+| RL trainer          | 计算 reward/advantage/loss，更新并同步权重  | 需要另外集成                          |
 
 这一分层避免两种混淆：`BENCHMARK.md` 的存在不能说明它自带完整任务评测系统；DeepSeek 开源一个 harness，也不能证明这是某个模型内部训练使用的同一套系统。后者需要模型报告、训练配置或明确声明才能建立联系。[^17][^23]
 
@@ -59,12 +59,12 @@ flowchart TB
 
 ### 2.2 Profile、bundle、preset 是不同层级
 
-| 概念 | 控制范围 | 典型用途 |
-|---|---|---|
-| Profile | 一次应用启动使用的组合 | `web`、`headless`、`sdk`、`sdk-minimal`、`acp` |
-| Bundle | 可分发的配置补丁与其依赖代码 | 提供 base 能力或某种应用入口 |
-| Agent preset | 单个会话的工具、persona、Skills 等 | `standard`、`ptc`、`minimal`、`cordis` |
-| Patch | 对插件树的插入或配置覆盖 | 增加 provider、调整策略与参数 |
+| 概念         | 控制范围                           | 典型用途                                       |
+| ------------ | ---------------------------------- | ---------------------------------------------- |
+| Profile      | 一次应用启动使用的组合             | `web`、`headless`、`sdk`、`sdk-minimal`、`acp` |
+| Bundle       | 可分发的配置补丁与其依赖代码       | 提供 base 能力或某种应用入口                   |
+| Agent preset | 单个会话的工具、persona、Skills 等 | `standard`、`ptc`、`minimal`、`cordis`         |
+| Patch        | 对插件树的插入或配置覆盖           | 增加 provider、调整策略与参数                  |
 
 启动时，bundle 按 profile 声明顺序应用，之后依次应用 profile patch、home patch、命令行 `--patch`。替换某个 row 的配置是替换整个 config，不能默认理解为任意深度字段合并。`web` 支持实时配置重载，而 `headless`、`sdk`、`sdk-minimal`、`acp` 在启动时应用一次，以保持其正在承接的工作生命周期。[^3]
 
@@ -116,11 +116,11 @@ Step 大体对应一次模型请求及其工具执行；一个 turn 可以包含
 
 ### 3.2 三种“历史”必须分开
 
-| 层 | 保存的对象 | 是否直接作为下一次模型输入 |
-|---|---|---|
-| Durable SessionEvent log | 输入、消息、工具、请求参数、替换、失败、生命周期等事实 | 只有其中的模型可见投影 |
-| Conversation surface / `deriveMessages()` | 当前仍有效的系统、用户、助手、工具消息 | 是主循环的逻辑消息来源 |
-| Live UI stream | 尚在生成的增量帧 | 用于实时显示，不等于已经持久化 |
+| 层                                        | 保存的对象                                             | 是否直接作为下一次模型输入     |
+| ----------------------------------------- | ------------------------------------------------------ | ------------------------------ |
+| Durable SessionEvent log                  | 输入、消息、工具、请求参数、替换、失败、生命周期等事实 | 只有其中的模型可见投影         |
+| Conversation surface / `deriveMessages()` | 当前仍有效的系统、用户、助手、工具消息                 | 是主循环的逻辑消息来源         |
+| Live UI stream                            | 尚在生成的增量帧                                       | 用于实时显示，不等于已经持久化 |
 
 日志是 append-only，但有效历史可以改变：追加一个 replacement 操作，能够让旧范围退出当前 surface，同时保留其原始事件。这为压缩、系统提示词更新和分叉保留了审计依据。因此“日志只追加”和“模型每轮看到的前缀永远不变”是两个不同命题。[^10]
 
@@ -144,12 +144,12 @@ Step 大体对应一次模型请求及其工具执行；一个 turn 可以包含
 
 ### 4.1 四种 preset 的实际取舍
 
-| Preset | 主要工具形态 | 上下文与编排 | 合适的研究问题 |
-|---|---|---|---|
-| `standard` | 原生 shell、文件、搜索等工具 | Skills、计划、目标、压缩、子代理、workflow 等 | 完整 coding agent 的协同效果 |
-| `minimal` | 持久 `bash`；Windows 为 `pwsh` | 固定 persona，无上下文压缩 | 减少显式工具与上下文策略变量 |
-| `ptc` | 模型主要调用 `run_code`，内部使用生成的工具 SDK | 继承大量 standard 能力；通用 workflow 工具显式禁用 | 程序式组合对调用轮数和观察量的影响 |
-| `cordis` | standard 能力加运行时检查与动态插件工具 | 含 preset 创作指引 | Agent 如何修改和创作自己的能力组合 |
+| Preset     | 主要工具形态                                    | 上下文与编排                                       | 合适的研究问题                     |
+| ---------- | ----------------------------------------------- | -------------------------------------------------- | ---------------------------------- |
+| `standard` | 原生 shell、文件、搜索等工具                    | Skills、计划、目标、压缩、子代理、workflow 等      | 完整 coding agent 的协同效果       |
+| `minimal`  | 持久 `bash`；Windows 为 `pwsh`                  | 固定 persona，无上下文压缩                         | 减少显式工具与上下文策略变量       |
+| `ptc`      | 模型主要调用 `run_code`，内部使用生成的工具 SDK | 继承大量 standard 能力；通用 workflow 工具显式禁用 | 程序式组合对调用轮数和观察量的影响 |
+| `cordis`   | standard 能力加运行时检查与动态插件工具         | 含 preset 创作指引                                 | Agent 如何修改和创作自己的能力组合 |
 
 此表以四份 preset 配置为准。尤其 PTC 并非逐项完全等同 standard：它保留 workflow engine 供其他能力使用，但禁用了通用 `workflow` 工具，以 `run_code` 作为模型编写多步程序的主要入口。minimal 的固定提示词也主动屏蔽其他提示词片段与 runtime context。[^8]
 
@@ -253,15 +253,15 @@ print(result.final_response)
 
 ### 6.3 最低限度的实验 manifest
 
-| 类别 | 应固定并保存的信息 |
-|---|---|
-| 软件 | dsh commit/版本、SDK/runtime wheel、插件及依赖版本 |
-| 组合 | profile、preset 内容、有序 patches、最终配置快照 |
+| 类别 | 应固定并保存的信息                                                        |
+| ---- | ------------------------------------------------------------------------- |
+| 软件 | dsh commit/版本、SDK/runtime wheel、插件及依赖版本                        |
+| 组合 | profile、preset 内容、有序 patches、最终配置快照                          |
 | 模型 | endpoint 类型、精确模型标识/权重版本、adapter、采样参数、reasoning effort |
-| 任务 | task ID、数据集 revision、仓库 base commit、输入 prompt |
-| 执行 | 镜像 digest、OS/shell、网络策略、可见路径、依赖和资源限制 |
-| 预算 | 每请求输出、总 token/成本、最大步骤、任务 deadline、并发与重试 |
-| 产物 | 全部日志及格式版本、附件/外置输出、补丁、verifier 输出、退出原因 |
+| 任务 | task ID、数据集 revision、仓库 base commit、输入 prompt                   |
+| 执行 | 镜像 digest、OS/shell、网络策略、可见路径、依赖和资源限制                 |
+| 预算 | 每请求输出、总 token/成本、最大步骤、任务 deadline、并发与重试            |
+| 产物 | 全部日志及格式版本、附件/外置输出、补丁、verifier 输出、退出原因          |
 
 这些是实验设计建议，不是 dsh 当前自动导出的完整合同。特别是持久 shell 的环境变量、cwd、进程状态，以及同一 home 中的会话资源，都可能引入跨任务污染。独立样本应使用新的 session ID，必要时同时使用新的 home 和执行环境。
 
@@ -277,7 +277,7 @@ print(result.final_response)
 
 ### 7.2 安全评测论文的有效范围
 
-原始论文 *Security Assessment of DeepSeek Harness with A.I.G* 对间接提示注入做了受控测试。其测试对象固定在 2026-08-13 的 `47f943859bef`，使用 DeepSeek-V4-Flash 代理端点，并将真实 agent loop、工具注册和事件路径连接到可控输入源及模拟敏感操作。[^20]
+原始论文 _Security Assessment of DeepSeek Harness with A.I.G_ 对间接提示注入做了受控测试。其测试对象固定在 2026-08-13 的 `47f943859bef`，使用 DeepSeek-V4-Flash 代理端点，并将真实 agent loop、工具注册和事件路径连接到可控输入源及模拟敏感操作。[^20]
 
 该实验能说明特定组合在受控注入场景中的表现，不能直接外推本报告 9 月版本、其他模型或真实服务的泄露比例。版本、工具、提示词、权限和判分口径都属于结果的一部分。本文因此不把它的实验比例转写为当前版本的“安全率”。
 
@@ -303,14 +303,14 @@ dsh 可承担 rollout 时的 Agent 控制层：与模型交互、执行工具、
 
 但公开 `StreamChunk` 是 text/reasoning/tool-argument delta、usage 和 finish 等事件；文本 delta 不保证恰好一个 tokenizer token。标准协议没有提供足够的逐 token 采样记录。把流式文本称为“token-level chunks”，不能替代 RL 所需的精确训练合同。[^23]
 
-| RL 必需信息 | dsh 当前可提供的相关依据 | 仍需补充的合同 |
-|---|---|---|
-| 实际输入 | 日志投影后的逻辑 messages、工具与请求配置 | 推理端实际 prompt token IDs、模板版本 |
-| 生成动作 | 输出内容块、raw tool arguments、带时间的 stream | sampled token IDs、逐 token logprobs |
-| 训练位置 | 消息角色与工具观察来源 | 显式 loss mask、特殊 token 与截断规则 |
-| On-policy 来源 | 模型路由及插件元数据 | 精确权重 revision、rollout policy 版本 |
-| 任务奖励 | 执行产物和结束原因 | 独立 verifier、reward contract、失败分类 |
-| 分支归属 | Session/fork/subagent 关系 | episode/segment ID、共享前缀和信用分配规则 |
+| RL 必需信息    | dsh 当前可提供的相关依据                        | 仍需补充的合同                             |
+| -------------- | ----------------------------------------------- | ------------------------------------------ |
+| 实际输入       | 日志投影后的逻辑 messages、工具与请求配置       | 推理端实际 prompt token IDs、模板版本      |
+| 生成动作       | 输出内容块、raw tool arguments、带时间的 stream | sampled token IDs、逐 token logprobs       |
+| 训练位置       | 消息角色与工具观察来源                          | 显式 loss mask、特殊 token 与截断规则      |
+| On-policy 来源 | 模型路由及插件元数据                            | 精确权重 revision、rollout policy 版本     |
+| 任务奖励       | 执行产物和结束原因                              | 独立 verifier、reward contract、失败分类   |
+| 分支归属       | Session/fork/subagent 关系                      | episode/segment ID、共享前缀和信用分配规则 |
 
 ### 8.2 一个建议的接入分层
 
@@ -362,13 +362,13 @@ flowchart LR
 
 ## 9. 与其他技术路线怎么比较
 
-| 维度 | dsh | mini-swe-agent `v2.4.6` | LangGraph |
-|---|---|---|---|
-| 主要抽象 | 插件服务、事件和可替换 Agent loop | Agent、Model、Environment 的小循环 | 显式状态图与工作流运行时 |
-| 扩展重心 | 能力实现、作用域和生命周期 | 替换类或配置，修改简洁控制流 | 图节点、边、状态及执行语义 |
-| 历史组织 | 事件日志与可变 surface 投影 | `messages` 与 trajectory 序列化 | 持久状态和恢复机制 |
-| 默认研究倾向 | 复杂 harness 的能力组合与交互 | 较窄控制循环下的 agent 行为 | 确定性业务步骤与 LLM 步骤混合 |
-| 主要工程负担 | 插件树、版本和多层语义 | 外层任务与环境系统集成 | 应用状态和图语义设计 |
+| 维度         | dsh                               | mini-swe-agent `v2.4.6`            | LangGraph                     |
+| ------------ | --------------------------------- | ---------------------------------- | ----------------------------- |
+| 主要抽象     | 插件服务、事件和可替换 Agent loop | Agent、Model、Environment 的小循环 | 显式状态图与工作流运行时      |
+| 扩展重心     | 能力实现、作用域和生命周期        | 替换类或配置，修改简洁控制流       | 图节点、边、状态及执行语义    |
+| 历史组织     | 事件日志与可变 surface 投影       | `messages` 与 trajectory 序列化    | 持久状态和恢复机制            |
+| 默认研究倾向 | 复杂 harness 的能力组合与交互     | 较窄控制循环下的 agent 行为        | 确定性业务步骤与 LLM 步骤混合 |
+| 主要工程负担 | 插件树、版本和多层语义            | 外层任务与环境系统集成             | 应用状态和图语义设计          |
 
 mini-swe-agent 的比较固定到 `a83fcae82d2a08f0ee0c688f9d137b3566c097f8`，其核心 `step()` 是 `execute_actions(query())`，消息和执行边界很直接。LangGraph 官方将自己定位为长期、有状态 Agent 的底层编排运行时，强调确定性逻辑和模型步骤的组合。上表比较的是抽象与工程取舍，不是性能排名。[^22][^25]
 
@@ -378,12 +378,12 @@ mini-swe-agent 的比较固定到 `a83fcae82d2a08f0ee0c688f9d137b3566c097f8`，�
 
 要判断 dsh 的机制是否有效，建议先做小规模、可审计的消融，而不是直接比较两个“默认设置”不同的完整产品。
 
-| 实验 | 固定什么 | 只改变什么 | 回答的问题 |
-|---|---|---|---|
-| minimal vs standard | 模型、题目、执行环境、总预算 | 完整工具与上下文能力组合 | 丰富 harness 对该任务分布是否有净收益 |
-| native vs PTC | 相同底层工具、基础任务/政策指令和外部执行边界 | 调用呈现及其必需 SDK/schema | 减少往返和观察量是否抵消程序错误 |
-| 压缩策略 | 相同模型、工具和长任务 | 阈值、裁剪及摘要策略 | 省下的上下文是否损害关键事实保留 |
-| 单 Agent vs 子代理 | 任务、总 token/成本和墙钟预算 | 是否允许 delegation | 并行与专门化是否抵消协调成本 |
+| 实验                | 固定什么                                      | 只改变什么                  | 回答的问题                            |
+| ------------------- | --------------------------------------------- | --------------------------- | ------------------------------------- |
+| minimal vs standard | 模型、题目、执行环境、总预算                  | 完整工具与上下文能力组合    | 丰富 harness 对该任务分布是否有净收益 |
+| native vs PTC       | 相同底层工具、基础任务/政策指令和外部执行边界 | 调用呈现及其必需 SDK/schema | 减少往返和观察量是否抵消程序错误      |
+| 压缩策略            | 相同模型、工具和长任务                        | 阈值、裁剪及摘要策略        | 省下的上下文是否损害关键事实保留      |
+| 单 Agent vs 子代理  | 任务、总 token/成本和墙钟预算                 | 是否允许 delegation         | 并行与专门化是否抵消协调成本          |
 
 第一项衡量的是整个能力组合的净效应，不应把收益归因于某一个模块。第二项如果直接使用出厂 PTC 与 standard preset，还会混入 workflow 工具差异；严谨消融需要复制 preset，对齐底层工具与基础指令，允许 presentation 必需的 SDK 提示词和 schema 改变。PTC 可访问 Node API，还需将实际外层 OS 执行边界对齐，不能仅凭相同 sandbox mode 宣称权限相同。
 
@@ -397,52 +397,82 @@ mini-swe-agent 的比较固定到 `a83fcae82d2a08f0ee0c688f9d137b3566c097f8`，�
 
 按下面顺序阅读，可以先把运行路径连起来，再进入横切机制。路径均相对本文固定的官方仓库；各行提供永久链接。
 
-| 阅读目标 | 入口 |
-|---|---|
-| 全局职责与启动层 | [docs/architecture.md](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/architecture.md) |
-| 最小完整应用树 | [sdk-minimal/cordis.patch.yml](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/bundle/sdk-minimal/cordis.patch.yml) |
-| 公共 Agent 契约 | [core/agent](https://github.com/deepseek-ai/deepseek-harness/tree/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/agent) |
-| 主循环和输入接纳 | [agent-loop/src/agent.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/agent-loop/src/agent.ts) |
-| 会话与 surface | [core/session/src](https://github.com/deepseek-ai/deepseek-harness/tree/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/session/src) |
-| 逻辑请求一致性 | [agent-loop/src/invariant.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/agent-loop/src/invariant.ts) |
-| 工具执行与 PTC | [tools/src/index.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/tools/src/index.ts)、[ptc.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/tools/src/ptc.ts) |
-| Provider 请求转换 | [llm-deepseek/src/serialize.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/llm/llm-deepseek/src/serialize.ts) |
-| 压缩及摘要调用 | [compaction-basic/src](https://github.com/deepseek-ai/deepseek-harness/tree/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/compaction/compaction-basic/src) |
+| 阅读目标              | 入口                                                                                                                                                                                                                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 全局职责与启动层      | [docs/architecture.md](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/architecture.md)                                                                                                                                                           |
+| 最小完整应用树        | [sdk-minimal/cordis.patch.yml](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/bundle/sdk-minimal/cordis.patch.yml)                                                                                                                           |
+| 公共 Agent 契约       | [core/agent](https://github.com/deepseek-ai/deepseek-harness/tree/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/agent)                                                                                                                                                                      |
+| 主循环和输入接纳      | [agent-loop/src/agent.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/agent-loop/src/agent.ts)                                                                                                                                       |
+| 会话与 surface        | [core/session/src](https://github.com/deepseek-ai/deepseek-harness/tree/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/session/src)                                                                                                                                                          |
+| 逻辑请求一致性        | [agent-loop/src/invariant.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/agent-loop/src/invariant.ts)                                                                                                                               |
+| 工具执行与 PTC        | [tools/src/index.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/tools/src/index.ts)、[ptc.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/tools/src/ptc.ts)         |
+| Provider 请求转换     | [llm-deepseek/src/serialize.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/llm/llm-deepseek/src/serialize.ts)                                                                                                                            |
+| 压缩及摘要调用        | [compaction-basic/src](https://github.com/deepseek-ai/deepseek-harness/tree/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/compaction/compaction-basic/src)                                                                                                                                       |
 | Python 的真实生命周期 | [api.py](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/python/sdk/src/deepseek_harness/api.py)、[client.py](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/python/sdk/src/deepseek_harness/client.py) |
-| Cordis 实际交付实现 | [vendor/README.md](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/vendor/README.md)、[fiber.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/vendor/cordis/src/fiber.ts) |
+| Cordis 实际交付实现   | [vendor/README.md](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/vendor/README.md)、[fiber.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/vendor/cordis/src/fiber.ts)                             |
 
 ## 资料与来源
 
 除单列的论文、在线文档与 mini-swe-agent 外，以下仓库资料作者/发布方均为 DeepSeek-AI，版本均为 `b2e3b2a0125854567a4a5fcba75782e42fe84901`，快照日期 2026-09-09，访问日期 2026-09-10。正文编号同时是对应来源的脚注。
 
 [^1]: DeepSeek-AI，[README](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/README.md)；[官方项目介绍](https://www.deepseek.com/harness/)。支持项目身份、MIT、预览状态及官网表述。
+
 [^2]: DeepSeek-AI，[v0.1.5-alpha.2 release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.2)，2026-09-09。支持 shell-only 默认值及 V3 变动；[固定提交](https://github.com/deepseek-ai/deepseek-harness/commit/b2e3b2a0125854567a4a5fcba75782e42fe84901)。
+
 [^3]: [Architecture](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/architecture.md)；[Capability seams](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/capability-seams.md)。支持服务角色、分层及有序配置。
+
 [^4]: [Vendored Packages](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/vendor/README.md)。支持 Cordis 版本、固定上游及本地修改。
+
 [^5]: Yifan Shi、Wei Zhang、Tianyi Cui，[A Programming Paradigm for Spatiotemporal Composability](https://arxiv.org/abs/2608.25512)，2026-08-26，v1；重点见 [PDF §6.1–6.3](https://arxiv.org/pdf/2608.25512#page=70)。支持组合理论、外部输出与隔离边界。
+
 [^6]: [Lifecycle and effects](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/cordis-tutorial/02-lifecycle-and-effects.md)；[Services](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/cordis-tutorial/03-services.md)；[fiber.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/vendor/cordis/src/fiber.ts#L597)。
+
 [^7]: [Loader EntryGroup.update](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/vendor/loader/src/config/group.ts#L59)；[HMR partialReload](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/vendor/hmr/src/index.ts#L491)；[Registry.delete](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/vendor/cordis/src/registry.ts#L258)。异步保证边界为静态实现分析。
+
 [^8]: [Preset 概念与作用域](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/preset/README.md)；[standard](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/preset/agent-presets/presets/standard/agent.cordis.yml)、[minimal](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/preset/agent-presets/presets/minimal/agent.cordis.yml)、[ptc](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/preset/agent-presets/presets/ptc/agent.cordis.yml)、[cordis](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/preset/agent-presets/presets/cordis/agent.cordis.yml) 配置。
+
 [^9]: [Agent loop 契约](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/agent-loop/README.md)；[agent.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/agent-loop/src/agent.ts)；[invariant.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/agent-loop/src/invariant.ts#L21)。
+
 [^10]: [Session subsystem](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/subsystems/session.md)；[Session 实现](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/session/src/index.ts)；[格式状态](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/session-format-status.md)。
+
 [^11]: [ToolRuntime](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/tools/src/index.ts#L650)；[并发分类](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/tools/src/index.ts#L1259)；[PTC bridge](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/tools/src/ptc.ts#L327)。
+
 [^12]: [Worker-thread runtime](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/code-runtime/code-runtime-worker-thread/README.md)。支持默认资源限制、Node API 权限及子进程存活边界。
+
 [^13]: [LLM service](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/llm/llm/README.md)；[DeepSeek adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/llm/llm-deepseek/README.md)；[pi-ai adapter](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/llm/llm-pi-ai/README.md)。
+
 [^14]: [Compaction basic](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/compaction/compaction-basic/README.md)；[compaction 元数据类型](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/compaction/compaction/src/types.ts#L34)。
+
 [^15]: [Subagent subsystem](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/subsystems/subagent.md)；[fork provider](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/subagent/subagent-fork-in-process/src/index.ts#L40)；[continuation 路由](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/subagent/subagent/src/continuation.ts#L192)。支持 delegation、spawn/fork 及生命周期；RL 信用分配为本文建议。
+
 [^16]: [Python SDK 教程](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/user/guide/python-sdk.md)；[Python SDK reference](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/python/sdk/README.md)；[sdk-minimal 实际组合](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/bundle/sdk-minimal/cordis.patch.yml)。
+
 [^17]: [BENCHMARK.md](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/BENCHMARK.md)。支持官方任务运行入口及公开评测合同的局限。
+
 [^18]: [benchmarks/](https://github.com/deepseek-ai/deepseek-harness/tree/b2e3b2a0125854567a4a5fcba75782e42fe84901/benchmarks)；[vitest.bench.config.ts](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/vitest.bench.config.ts)。支持工程性能测试与任务成功率的区别。
+
 [^19]: [Safety notice](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/SAFETY.md)；[base 权限组合](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/bundle/base/cordis.patch.yml#L202)；[Sandbox subsystem](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/docs/subsystems/sandbox.md)。
-[^20]: Zonghao Ying、Xiangfan Wu、Huiyu Wu、Xing Zheng、Huangsheng Cheng、Xiaorong Shi、Jing Guo，*Security Assessment of DeepSeek Harness with A.I.G: Evaluating Resistance to Indirect Prompt Injection*，[论文原文](https://arxiv.org/abs/2608.16393v2)，2026-08-18，v2。结论只用于其固定版本与受控实验设置。
+
+[^20]: Zonghao Ying、Xiangfan Wu、Huiyu Wu、Xing Zheng、Huangsheng Cheng、Xiaorong Shi、Jing Guo，_Security Assessment of DeepSeek Harness with A.I.G: Evaluating Resistance to Indirect Prompt Injection_，[论文原文](https://arxiv.org/abs/2608.16393v2)，2026-08-18，v2。结论只用于其固定版本与受控实验设置。
+
 [^21]: [SDK protocol](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/sdk/protocol/README.md)；[SDK server](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/sdk/server/README.md)。支持入队回执、通知及缺少取消接口。
+
 [^22]: SWE-agent 项目，[mini-swe-agent DefaultAgent](https://github.com/SWE-agent/mini-swe-agent/blob/a83fcae82d2a08f0ee0c688f9d137b3566c097f8/src/minisweagent/agents/default.py)，`v2.4.6` 固定提交，访问于 2026-09-10。
+
 [^23]: [LLM StreamChunk 与 GenerateOptions](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/llm/llm/src/types.ts#L382)；[Python RunResult](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/python/sdk/src/deepseek_harness/api.py#L41)。支持公开标准协议未提供完整 RL token 合同；接入设计为分析建议。
+
 [^24]: [Session-log request extension](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/session/session-log-deepseek/README.md)；[Plugin package inventory](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/llm/plugin-package-inventory-deepseek/README.md)。
+
 [^25]: LangChain，[LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview)，在线文档，访问于 2026-09-10。支持状态图、持久执行及确定性/Agent 步骤组合的定位。
+
 [^26]: [Title LLM 请求日志](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/session/session-title-llm/src/index.ts#L248)。支持辅助请求与主循环 invariant 范围的区分。
+
 [^27]: [Cordis toolset](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/extensions/tool-cordis/README.md)。支持动态包寿命、会话归属和宿主访问边界。
+
 [^28]: [Python SDK pyproject.toml](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/python/sdk/pyproject.toml)；[根 package.json](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/package.json)；[Python contributor workflows](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/python/development.md)。支持开发占位版本、打包版本及源码构建路径。
+
 [^29]: [Session.run 等待逻辑](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/python/sdk/src/deepseek_harness/api.py#L161)；[RPC timeout](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/python/sdk/src/deepseek_harness/client.py#L292)；[无 timeout 的 notification 等待](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/python/sdk/src/deepseek_harness/client.py#L563)。此处以实现限定超时范围。
+
 [^30]: [Session checkpoint policy](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/session/session-checkpoint-policy/src/index.ts#L63)；[Interrupted-tail repair](https://github.com/deepseek-ai/deepseek-harness/blob/b2e3b2a0125854567a4a5fcba75782e42fe84901/packages/core/session/src/repair.ts#L93)。支持持久化与外部副作用边界。
+
 [^31]: DeepSeek，[deepseek-harness-sdk on PyPI](https://pypi.org/project/deepseek-harness-sdk/)，页面列出的最新版本 `0.1.2rc1`，发布日期 2026-09-04，访问于 2026-09-10。用于核对 Python 发布物，不能替代本文源码快照。

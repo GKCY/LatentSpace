@@ -12,13 +12,13 @@ verl 在 2026 年 7～8 月合入的 `delta_sharded` 系列把这条链路改造
 
 核心演进如下：
 
-| 日期 | PR | 解决的问题 |
-|---|---|---|
+| 日期       | PR                                                      | 解决的问题                                                                        |
+| ---------- | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | 2026-07-16 | [#6974](https://github.com/verl-project/verl/pull/6974) | 引入 `delta_sharded`：本地 shard 差分、稀疏 gather、NCCL 广播和 SGLang 原地 apply |
-| 2026-07-25 | [#7144](https://github.com/verl-project/verl/pull/7144) | 用 `BlockPlacement` 支持一般矩形分片，并把训练布局到 HF 坐标的转换下沉给 backend |
-| 2026-07-29 | [#7085](https://github.com/verl-project/verl/pull/7085) | 接入 VeOmni FSDP2+EP，处理 fused expert stack 和手工 EP 切分 |
-| 2026-07-31 | [#7181](https://github.com/verl-project/verl/pull/7181) | 接入 Megatron-Bridge TP/EP/ETP 和 hybrid-Mamba，并加入 `verify_every` |
-| 2026-08-03 | [#7223](https://github.com/verl-project/verl/pull/7223) | 补齐 Megatron PP/VPP、全局参数目录、非 owner 占位行和 EP slot union |
+| 2026-07-25 | [#7144](https://github.com/verl-project/verl/pull/7144) | 用 `BlockPlacement` 支持一般矩形分片，并把训练布局到 HF 坐标的转换下沉给 backend  |
+| 2026-07-29 | [#7085](https://github.com/verl-project/verl/pull/7085) | 接入 VeOmni FSDP2+EP，处理 fused expert stack 和手工 EP 切分                      |
+| 2026-07-31 | [#7181](https://github.com/verl-project/verl/pull/7181) | 接入 Megatron-Bridge TP/EP/ETP 和 hybrid-Mamba，并加入 `verify_every`             |
+| 2026-08-03 | [#7223](https://github.com/verl-project/verl/pull/7223) | 补齐 Megatron PP/VPP、全局参数目录、非 owner 占位行和 EP slot union               |
 
 ---
 
@@ -456,11 +456,11 @@ EP rank 的本地 Megatron 参数名可能带不同 expert id，因此 slot tabl
 
 当前 backend 覆盖可概括为：
 
-| Training backend | 当前覆盖 | 主要限制 |
-|---|---|---|
-| FSDP1/FSDP2 | DTensor/普通 tensor、一般矩形 `BlockPlacement`、identity HF mapping | 非 identity converter 需 backend 扩展；LoRA 未完整 fail-closed |
-| VeOmni | FSDP2/HSDP + EP、fused expert stack | converter 需 dim-0 separable、静态 slot、保 NaN；LoRA 尚未完整支持 |
-| Megatron-Bridge | TP、EP、ETP、PP/VPP、hybrid-Mamba | 不支持 deprecated vanilla bridge；显式拒绝 LoRA；mapping 需符合 probe 假设 |
+| Training backend | 当前覆盖                                                            | 主要限制                                                                   |
+| ---------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| FSDP1/FSDP2      | DTensor/普通 tensor、一般矩形 `BlockPlacement`、identity HF mapping | 非 identity converter 需 backend 扩展；LoRA 未完整 fail-closed             |
+| VeOmni           | FSDP2/HSDP + EP、fused expert stack                                 | converter 需 dim-0 separable、静态 slot、保 NaN；LoRA 尚未完整支持         |
+| Megatron-Bridge  | TP、EP、ETP、PP/VPP、hybrid-Mamba                                   | 不支持 deprecated vanilla bridge；显式拒绝 LoRA；mapping 需符合 probe 假设 |
 
 ## 七、Sparse gather、bucket 和 wire protocol
 
@@ -569,12 +569,12 @@ copy_(dst, torch.where(torch.isnan(src), dst, src))
 
 “没有报错”和“rollout 权重等于 trainer 权重”之间还有很长距离。当前实现提供了四层不同强度的证据：
 
-| 层次 | 机制 | 能证明什么 | 不能证明什么 |
-|---|---|---|---|
-| 传输完整性 | 每个 flush 的 positions+values checksum | sender encode 到 SGLang loader 之间 payload 没有被明显破坏 | converter、slot、name mapping 是否正确 |
-| 编码正确性 | bitwise diff、round-trip、masked apply tests | 稀疏 patch 可以无损重建同 dtype 目标 | 多 backend 的复杂布局是否映射正确 |
-| 转换正确性 | BlockPlacement tests、Megatron real-vs-probe differential oracle | local shard 到最终 HF 坐标的转换与 full path 一致 | 运行中是否漏掉某一轮或某个参数 |
-| 状态正确性 | `verify_every=K` 全量幂等 sweep | 本次 full export 经真实 loader 实际触及的 destinations，重放是否幂等 | full exporter/loader 是否一致地遗漏或错误映射；也不提供事务回滚 |
+| 层次       | 机制                                                             | 能证明什么                                                           | 不能证明什么                                                    |
+| ---------- | ---------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 传输完整性 | 每个 flush 的 positions+values checksum                          | sender encode 到 SGLang loader 之间 payload 没有被明显破坏           | converter、slot、name mapping 是否正确                          |
+| 编码正确性 | bitwise diff、round-trip、masked apply tests                     | 稀疏 patch 可以无损重建同 dtype 目标                                 | 多 backend 的复杂布局是否映射正确                               |
+| 转换正确性 | BlockPlacement tests、Megatron real-vs-probe differential oracle | local shard 到最终 HF 坐标的转换与 full path 一致                    | 运行中是否漏掉某一轮或某个参数                                  |
+| 状态正确性 | `verify_every=K` 全量幂等 sweep                                  | 本次 full export 经真实 loader 实际触及的 destinations，重放是否幂等 | full exporter/loader 是否一致地遗漏或错误映射；也不提供事务回滚 |
 
 行为层的 reward、KL、log-prob correlation 或 W&B 曲线只能作为统计证据。不同 sampling run 不会逐 token bitwise 相同，因此“曲线在噪声范围内重合”不等于状态级证明。
 
@@ -643,12 +643,12 @@ Manager 会先 abort generation，因此成功时不会有请求看到中间 flu
 
 [#7144](https://github.com/verl-project/verl/pull/7144) 报告的 H100、GSM8K GRPO、V1 `separate_async`、SGLang 数据如下。这里的 `nccl` 已包含 [#7005](https://github.com/verl-project/verl/pull/7005) 的 FSDP2 staging 修复：
 
-| 模型与拓扑 | `delta_sharded` | 全量 `nccl` | 报告加速 |
-|---|---:|---:|---:|
-| Qwen2.5-7B，1+1 nodes | 3.9～4.9 s | 5.5～6.0 s | 约 1.3× |
-| Qwen2.5-32B，2+2 nodes，offload on | 11.2～11.9 s | 17.7～18.1 s | 1.55× |
-| Qwen2.5-32B，2+2 nodes，offload off | 6.2 s | 14.2 s | 2.3× |
-| Qwen2.5-72B，4+4 nodes，gen TP8，offload off | 12.0～13.0 s | 28.5～29.1 s | 2.3× |
+| 模型与拓扑                                   | `delta_sharded` |  全量 `nccl` | 报告加速 |
+| -------------------------------------------- | --------------: | -----------: | -------: |
+| Qwen2.5-7B，1+1 nodes                        |      3.9～4.9 s |   5.5～6.0 s |  约 1.3× |
+| Qwen2.5-32B，2+2 nodes，offload on           |    11.2～11.9 s | 17.7～18.1 s |    1.55× |
+| Qwen2.5-32B，2+2 nodes，offload off          |           6.2 s |       14.2 s |     2.3× |
+| Qwen2.5-72B，4+4 nodes，gen TP8，offload off |    12.0～13.0 s | 28.5～29.1 s |     2.3× |
 
 这组结果说明：即使 full NCCL 已经移除了明显的 staging 浪费，shard-local sparse gather 仍有收益；但 7B 快互联场景的提升远小于大模型。
 
@@ -656,10 +656,10 @@ Manager 会先 abort generation，因此成功时不会有请求看到中间 flu
 
 [#7085](https://github.com/verl-project/verl/pull/7085) 报告：
 
-| 模型与拓扑 | `delta_sharded` | 全量 `nccl` | 说明 |
-|---|---:|---:|---|
-| Qwen3-30B-A3B，VeOmni EP8，2×8 GPU disaggregated | 7.1 s median | 32.2 s median | 4.5×（50-step median） |
-| Qwen3-235B-A22B，EP8×FSDP8，8+2 nodes，gen TP16 | 公开逐步数据约 11.4～14.9 s | 246～266 s | 作者报告约 21×；seed 仍为 full export |
+| 模型与拓扑                                       |             `delta_sharded` |   全量 `nccl` | 说明                                  |
+| ------------------------------------------------ | --------------------------: | ------------: | ------------------------------------- |
+| Qwen3-30B-A3B，VeOmni EP8，2×8 GPU disaggregated |                7.1 s median | 32.2 s median | 4.5×（50-step median）                |
+| Qwen3-235B-A22B，EP8×FSDP8，8+2 nodes，gen TP16  | 公开逐步数据约 11.4～14.9 s |    246～266 s | 作者报告约 21×；seed 仍为 full export |
 
 [30B 的三步原始数据](https://github.com/verl-project/verl/pull/7085#issuecomment-4998563485)是 delta 5.8/7.4/7.9 s、full 32.2/31.9/33.2 s；表中采用作者后续公开的 [50-step median](https://github.com/verl-project/verl/pull/7085#issuecomment-5029383288)，避免混用统计口径。[235B 表](https://github.com/verl-project/verl/pull/7085#issuecomment-5027537258)则采用作者公开的逐步原始数据：delta 14.9/11.8/11.4 s，对 full 255.9/246.5/266.1 s，逐步约为 17.2×/20.9×/23.3×，所以“约 21×”成立。
 
@@ -671,9 +671,9 @@ Manager 会先 abort generation，因此成功时不会有请求看到中间 flu
 
 [#7223](https://github.com/verl-project/verl/pull/7223) 加入 PP/VPP 后，在 235B TP4×PP8×EP4 的 PR 测试拓扑上报告：
 
-| `delta_sharded` | 全量 `nccl` | 报告加速 |
-|---:|---:|---:|
-| 97.5～111.1 s | 220.5～236.8 s | 2.1～2.4× |
+| `delta_sharded` |    全量 `nccl` |  报告加速 |
+| --------------: | -------------: | --------: |
+|   97.5～111.1 s | 220.5～236.8 s | 2.1～2.4× |
 
 为什么 PP8 的收益小了？因为当前 PP>1 为保证 actor global rank 0 能收到任意 stage 的参数，所有 directory row 都通过 WORLD group merge；placeholder 和更大的 collective group 带来了固定成本。这是用通用性换来的实现简洁，未来仍有 owner subgroup + rank0 relay 等优化空间。
 
@@ -708,10 +708,10 @@ Manager 会先 abort generation，因此成功时不会有请求看到中间 flu
 
 FSDP2 `state_dict()` 只收集 DTensor reference，原实现却仍在导出前把整个 local shard 搬到 GPU，导出后再 offload。[#7005](https://github.com/verl-project/verl/pull/7005) 移除这次纯开销：
 
-| 指标 | 修复前 | 修复后 |
-|---|---:|---:|
-| 7B export/generator creation | 3.3～4.5 s | 0.07 s |
-| 每步 full NCCL sync | 6.65～6.93 s | 3.36～3.49 s |
+| 指标                         |       修复前 |       修复后 |
+| ---------------------------- | -----------: | -----------: |
+| 7B export/generator creation |   3.3～4.5 s |       0.07 s |
+| 每步 full NCCL sync          | 6.65～6.93 s | 3.36～3.49 s |
 
 这也提醒我们：不要把所有收益都归因于网络。一次看似通信优化的问题，可能主要耗在参数 staging。
 
@@ -808,15 +808,15 @@ checkpoint_engine/flushes
 
 前文的使用边界可以进一步归纳为几组待补齐的系统能力：
 
-| 未解决问题 | 当前影响 | 优先演进方向 |
-|---|---|---|
-| Sparse apply 与 transport 覆盖面 | rollout 只支持 SGLang，传输只在 CUDA/NCCL 路径；vLLM、TRT-LLM、HCCL/NPU 不可直接复用 | 为 inference backend 定义统一 indexed-update plugin，并把 transport 与 patch contract 解耦 |
-| 高 changed ratio 与 index 开销 | 没有 density-aware fallback；当 $r(s+4)\ge s$ 时，BF16 sparse payload 已不如 dense values | 根据预测的端到端成本自动切 dense/full wire；探索 bitmap、run-length 或分层 encoding |
-| Bucket 只是软上限 | dense seed 的超大单参数、单-slot sparse gather、receiver full-shape mask 都可能越过 bucket | 对 seed 做参数内 chunking，使 wire/staging 更接近 bucket 上限；真正的全局硬上限还需要 chunk-native gather 和 indexed apply |
-| 没有版本与事务协议 | 逐 flush 修改 live weights，失败不能 rollback；新 replica、热重启和 elastic scale-up 没有共同 base | 增加 base/version、ACK、commit/abort、reset/reseed handshake；必要时配合 shadow state 或可回滚 journal |
-| 量化 delta 未完成 | vLLM FP8/MXFP4 refit、TRT-LLM FP8 refit 仍是全量或专用 reload，不能等同于 quantized sparse wire | 采用 quantize-then-diff，并让 receiver 同步更新 scale、派生权重和 kernel state |
-| LoRA 与新 mapping 仍靠人工守约 | Megatron 显式拒绝 LoRA，VeOmni 有 TODO，FSDP 缺少完整 guard；新增 converter 可能破坏 slot/NaN 假设 | 将 slot overlap、seed/steady tensor-set equivalence、real-vs-probe differential oracle 变成 fail-closed gate |
-| NaN sentinel 与 dense receiver work | NaN replacement 会与 untouched 混淆；每个 touched parameter 仍要 full-shape densify 和 `torch.where` | 加入 NaN/non-finite guard，并让 inference backend 原生接受 indexed update，避免 NaN mask |
+| 未解决问题                          | 当前影响                                                                                             | 优先演进方向                                                                                                               |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Sparse apply 与 transport 覆盖面    | rollout 只支持 SGLang，传输只在 CUDA/NCCL 路径；vLLM、TRT-LLM、HCCL/NPU 不可直接复用                 | 为 inference backend 定义统一 indexed-update plugin，并把 transport 与 patch contract 解耦                                 |
+| 高 changed ratio 与 index 开销      | 没有 density-aware fallback；当 $r(s+4)\ge s$ 时，BF16 sparse payload 已不如 dense values            | 根据预测的端到端成本自动切 dense/full wire；探索 bitmap、run-length 或分层 encoding                                        |
+| Bucket 只是软上限                   | dense seed 的超大单参数、单-slot sparse gather、receiver full-shape mask 都可能越过 bucket           | 对 seed 做参数内 chunking，使 wire/staging 更接近 bucket 上限；真正的全局硬上限还需要 chunk-native gather 和 indexed apply |
+| 没有版本与事务协议                  | 逐 flush 修改 live weights，失败不能 rollback；新 replica、热重启和 elastic scale-up 没有共同 base   | 增加 base/version、ACK、commit/abort、reset/reseed handshake；必要时配合 shadow state 或可回滚 journal                     |
+| 量化 delta 未完成                   | vLLM FP8/MXFP4 refit、TRT-LLM FP8 refit 仍是全量或专用 reload，不能等同于 quantized sparse wire      | 采用 quantize-then-diff，并让 receiver 同步更新 scale、派生权重和 kernel state                                             |
+| LoRA 与新 mapping 仍靠人工守约      | Megatron 显式拒绝 LoRA，VeOmni 有 TODO，FSDP 缺少完整 guard；新增 converter 可能破坏 slot/NaN 假设   | 将 slot overlap、seed/steady tensor-set equivalence、real-vs-probe differential oracle 变成 fail-closed gate               |
+| NaN sentinel 与 dense receiver work | NaN replacement 会与 untouched 混淆；每个 touched parameter 仍要 full-shape densify 和 `torch.where` | 加入 NaN/non-finite guard，并让 inference backend 原生接受 indexed update，避免 NaN mask                                   |
 
 ---
 

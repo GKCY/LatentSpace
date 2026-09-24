@@ -27,33 +27,33 @@ related_notes:
 
 现有文章的关系如下：
 
-| 现有文章 | 关系 | 本提案的处理 |
-| --- | --- | --- |
-| `Partial Rollout` | 解释中断、续写、长尾回收 | 新文章解释它如何和 Sample Mixer、KV 状态及大批量训练共同工作 |
-| `训推一致性诊断` | 解释概率偏差和 MoE 路由问题 | 新文章补充 QDQ、R3、top-p candidate-set replay 在完整系统中的位置 |
-| `Agent Lightning` | 解释 Harness 接入 RL 和轨迹边界 | 新文章补充 mini-harness、多 Harness 训练和大规模基础设施的另一种实现 |
-| `DeepSeek-V4.1 后训练解读` | 解释另一套 Agentic RL recipe | 新文章关注 MiMo 报告对规模、grader 与工程稳定性的系统化拆分 |
+| 现有文章                   | 关系                            | 本提案的处理                                                         |
+| -------------------------- | ------------------------------- | -------------------------------------------------------------------- |
+| `Partial Rollout`          | 解释中断、续写、长尾回收        | 新文章解释它如何和 Sample Mixer、KV 状态及大批量训练共同工作         |
+| `训推一致性诊断`           | 解释概率偏差和 MoE 路由问题     | 新文章补充 QDQ、R3、top-p candidate-set replay 在完整系统中的位置    |
+| `Agent Lightning`          | 解释 Harness 接入 RL 和轨迹边界 | 新文章补充 mini-harness、多 Harness 训练和大规模基础设施的另一种实现 |
+| `DeepSeek-V4.1 后训练解读` | 解释另一套 Agentic RL recipe    | 新文章关注 MiMo 报告对规模、grader 与工程稳定性的系统化拆分          |
 
 本轮只生成新文章提案，不修改上述文章或索引页。审核通过后，再决定是否给其中两三篇增加交叉链接或局部补充。
 
 # 证据摘要
 
-| 主张 | 证据位置 | 备注 |
-| --- | --- | --- |
-| MiMo-V2.6 将 RL 扩展拆成训练计算、环境/Harness 和 grader 三个维度 | 报告第 1、8–9 页；官方发布页 | 是报告的总论点 |
-| Pro 为 1.02T 总参数、42B 激活参数；Flash 为 310B 总参数、15B 激活参数 | 报告第 1、6 页 | 模型规格，不等于每次 RL 更新都使用全部参数 |
-| 每步 1,568 prompts、每个 prompt 16 条 rollout，共约 25K trajectories，2.7B–3.7B tokens | 报告第 8、20 页 | 训练设置；序列平均长度约 110K–150K tokens |
-| Pro/Flash 的 RL 成本约为 260 万/90 万美元，DeepSWE 从 58.4/48.7 提升到 72.6/65.7 | 报告第 8、20 页；官方发布页 | 这是完整训练过程的曲线，不是单一模块的独立消融 |
-| 任务分布包含 coding、general tool use、aesthetic design、context following、cybersecurity | 报告第 20 页 | 比例为 68%、12%、13%、3%、4% |
-| 任务监督同时做 specification–test 对齐、重复执行、rollout audit 和 hack-agent 筛查 | 报告第 9–16 页 | 目标是让 reward 更接近任务要求并减少环境漏洞 |
-| 确认的 reward-hacking trajectory 在最终训练中低于 2% | 报告第 16 页 | 依赖环境清理、网络隔离、离线审计和 grader 修正 |
-| GRS 用离线 rollout 生成 rubric；GAR 在线比较同组轨迹并重分配 passing trajectories 的 advantage | 报告第 16–19 页 | GRS 奖励形式为测试结果乘 solution/behavior rubric 分数 |
-| Agentic 轨迹按 Sample → Sequence → Context → Segment 组织 | 报告第 26–27 页 | Segment 是单个模型生成、系统/用户消息或工具结果；只有模型生成参与 loss |
-| Harness Pool 承载多租户 Agent Loop，Payload Porter 将重 payload 写入分布式存储，控制面只处理元数据 | 报告第 27–29 页 | 解决大 batch、多 Harness 和多模态 payload 的扩展问题 |
-| 25 个数据源的生成 token 和 rollout 时长差异可达 90× 和 66× | 报告第 29–31 页 | Sample Mixer 用自适应并发、调度、预测 dispatch 和 replay 维持目标数据分布 |
-| QDQ、R3 和 top-p candidate-set replay 用于训推一致性；Context Cache 跨 turn 保存状态 | 报告第 32 页 | R3 重放 rollout 时的专家选择；candidate set 重放采样归一化 |
-| router 可训练时专家负载崩溃，冻结后负载稳定 | 报告第 23–24 页 | CV 0.78→2.0、peak load 6×→16×、cold experts 0.5%→22%；冻结后 CV 约 0.7 |
-| MiMo-V2.6-Distill-Qwen-9B 配套约 7k 个 RL 任务并开放框架与 mini-harness | 报告第 33–36 页；官方发布页 | 9B 模型的单 Harness 和多 Harness 结果不能直接代表 Pro/Flash 的同一训练轨迹 |
+| 主张                                                                                               | 证据位置                     | 备注                                                                       |
+| -------------------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------- |
+| MiMo-V2.6 将 RL 扩展拆成训练计算、环境/Harness 和 grader 三个维度                                  | 报告第 1、8–9 页；官方发布页 | 是报告的总论点                                                             |
+| Pro 为 1.02T 总参数、42B 激活参数；Flash 为 310B 总参数、15B 激活参数                              | 报告第 1、6 页               | 模型规格，不等于每次 RL 更新都使用全部参数                                 |
+| 每步 1,568 prompts、每个 prompt 16 条 rollout，共约 25K trajectories，2.7B–3.7B tokens             | 报告第 8、20 页              | 训练设置；序列平均长度约 110K–150K tokens                                  |
+| Pro/Flash 的 RL 成本约为 260 万/90 万美元，DeepSWE 从 58.4/48.7 提升到 72.6/65.7                   | 报告第 8、20 页；官方发布页  | 这是完整训练过程的曲线，不是单一模块的独立消融                             |
+| 任务分布包含 coding、general tool use、aesthetic design、context following、cybersecurity          | 报告第 20 页                 | 比例为 68%、12%、13%、3%、4%                                               |
+| 任务监督同时做 specification–test 对齐、重复执行、rollout audit 和 hack-agent 筛查                 | 报告第 9–16 页               | 目标是让 reward 更接近任务要求并减少环境漏洞                               |
+| 确认的 reward-hacking trajectory 在最终训练中低于 2%                                               | 报告第 16 页                 | 依赖环境清理、网络隔离、离线审计和 grader 修正                             |
+| GRS 用离线 rollout 生成 rubric；GAR 在线比较同组轨迹并重分配 passing trajectories 的 advantage     | 报告第 16–19 页              | GRS 奖励形式为测试结果乘 solution/behavior rubric 分数                     |
+| Agentic 轨迹按 Sample → Sequence → Context → Segment 组织                                          | 报告第 26–27 页              | Segment 是单个模型生成、系统/用户消息或工具结果；只有模型生成参与 loss     |
+| Harness Pool 承载多租户 Agent Loop，Payload Porter 将重 payload 写入分布式存储，控制面只处理元数据 | 报告第 27–29 页              | 解决大 batch、多 Harness 和多模态 payload 的扩展问题                       |
+| 25 个数据源的生成 token 和 rollout 时长差异可达 90× 和 66×                                         | 报告第 29–31 页              | Sample Mixer 用自适应并发、调度、预测 dispatch 和 replay 维持目标数据分布  |
+| QDQ、R3 和 top-p candidate-set replay 用于训推一致性；Context Cache 跨 turn 保存状态               | 报告第 32 页                 | R3 重放 rollout 时的专家选择；candidate set 重放采样归一化                 |
+| router 可训练时专家负载崩溃，冻结后负载稳定                                                        | 报告第 23–24 页              | CV 0.78→2.0、peak load 6×→16×、cold experts 0.5%→22%；冻结后 CV 约 0.7     |
+| MiMo-V2.6-Distill-Qwen-9B 配套约 7k 个 RL 任务并开放框架与 mini-harness                            | 报告第 33–36 页；官方发布页  | 9B 模型的单 Harness 和多 Harness 结果不能直接代表 Pro/Flash 的同一训练轨迹 |
 
 # 拟写文章
 
@@ -140,7 +140,6 @@ MiMo-V2.6 的核心经验可以概括为：Agentic RL 的规模化不是单独�
 - 采用“MiMo-V2.6 技术报告解读：把 Agentic RL 扩展成系统工程”作为正式标题，并保留模型规模、成本和 grader 证据。
 - 主文章已添加指向 `Partial Rollout`、`训推一致性诊断` 和 `Agent Lightning` 的 wikilink。
 - 论文阅读索引已加入主文章入口；`foundations/RL/index.md` 未作无关改动。
-
 
 ## 应用记录
 

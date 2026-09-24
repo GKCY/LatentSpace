@@ -117,7 +117,6 @@ Agent Lightning 还选择自托管 Kubernetes，而不是依赖 Modal、Volcano 
 
 监控系统会保存训练和验证 rollout、状态、模型请求、奖励、token/turn 统计和 pod 日志。作者正是通过这些记录发现了编码训练中的 reward hacking，而不是只看最终成功率。[§3.2–§3.4，PDF 第 9–10 页](https://arxiv.org/pdf/2608.17528#page=10)
 
-
 ### 3.3 从可接入 Harness 到可扩展 Harness Pool
 
 Agent Lightning 解决的是“已有 Harness 怎样进入训练闭环”：Gateway 记录 rollout 事件，Controller 管理执行状态，Trainer 按 rollout 级别组装样本。MiMo-V2.6 关注的是当 Harness 数量和 payload 规模继续增大后，控制面怎样不被数据面拖垮。它用 Harness Pool 让固定数量的持久 actor 承载多个租户，再用 Payload Porter 把 reward、长度和对象 key 等轻量元数据与 token、logprob、MoE 路由和多模态输入分开存储。[MiMo-V2.6 技术报告，第 27–29 页](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL/resolve/main/MiMo_V2_6_technical_report.pdf#page=27)

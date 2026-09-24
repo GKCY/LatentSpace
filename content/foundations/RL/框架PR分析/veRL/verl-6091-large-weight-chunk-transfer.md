@@ -13,9 +13,9 @@
 
 以 PPO、GRPO、DAPO 这类训练为例，训练系统通常至少有两类 worker：
 
-| 角色 | 负责内容 |
-|---|---|
-| Trainer worker | 反向传播、优化器更新、维护最新 policy 权重 |
+| 角色           | 负责内容                                         |
+| -------------- | ------------------------------------------------ |
+| Trainer worker | 反向传播、优化器更新、维护最新 policy 权重       |
 | Rollout worker | 用当前 policy 做推理，生成 response / trajectory |
 
 一次训练循环大致是：

@@ -307,7 +307,6 @@ while not stop:
 
 真实实现还要处理并发的 weight update、工具调用的幂等性、重复提交和 checkpoint crash；上面的代码只表达数据契约，不代表可以直接替换框架实现。
 
-
 ### MiMo-V2.6：把 partial rollout 放进大批量混合调度
 
 MiMo-V2.6 给出了一个很具体的生产案例：每个训练 step 采样 1,568 个 prompt，每个 prompt 生成 16 条 rollout，约 25K 条轨迹进入同一轮训练；单条序列平均约 110K–150K token。报告因此把 partial rollout 和数据混合放在同一个调度问题里：收齐当前 batch 后，中断仍在运行的长序列，下一轮再继续，并用更大的 batch 摊薄续写前的 re-prefill 成本。[MiMo-V2.6 技术报告，第 8–9 页](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL/resolve/main/MiMo_V2_6_technical_report.pdf#page=9)

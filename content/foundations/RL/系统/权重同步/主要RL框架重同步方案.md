@@ -131,16 +131,16 @@ Hugging Face 综述最重要的判断，是把权重同步拆成两个正交问�
 
 > **注意：下面两张分类表先忠实呈现原综述口径，其中包含已由同期源码证伪或需要降格的归类。代码校勘后的框架结论统一放在第六节。**
 
-| 传输机制 | 综述中的延迟量级 | 综述归类的框架（未经代码校勘） | 核心特点 |
-|---|---:|---|---|
-| NCCL Broadcast | 约 100–500 ms | PipelineRL、SkyRL、SLIME、MILES、ROLL、OAT、NeMo-RL、PRIME-RL、open-instruct、AReaL | GPU 间直接广播，是全量权重同步的主流方案 |
-| NCCL + Bucketing | 约 20 ms | verl | 对参数分组，部分实现还会 flatten / pack，以减少调度或 collective 开销 |
-| KV / Shared Memory | 低 | TorchForge | 通过 key-value store 协调，用共享内存预取数据 |
-| Filesystem + HTTP | 中 | PRIME-RL、AReaL、ART | 文件承载权重，HTTP 负责通知、版本与加载控制 |
-| CUDA IPC | 很低 | NeMo-RL、MILES | 同机 GPU 间传递 CUDA memory handle，避免网络和多余拷贝 |
-| JAX Cross-mesh | 低 | Tunix | 在不同 JAX device mesh 之间 reshard / `device_put` |
-| HTTP PUT | 高 | verifiers-rl | 这是综述 Axis 3 的原始标注；同日期源码实际是 HTTP 控制请求 + PyNCCL 数据广播，详见版本说明 |
-| Filesystem + Restart | 很高 | Atropos | 保存 checkpoint 后重启或重载推理服务，最朴素也最慢 |
+| 传输机制             | 综述中的延迟量级 | 综述归类的框架（未经代码校勘）                                                      | 核心特点                                                                                   |
+| -------------------- | ---------------: | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| NCCL Broadcast       |    约 100–500 ms | PipelineRL、SkyRL、SLIME、MILES、ROLL、OAT、NeMo-RL、PRIME-RL、open-instruct、AReaL | GPU 间直接广播，是全量权重同步的主流方案                                                   |
+| NCCL + Bucketing     |         约 20 ms | verl                                                                                | 对参数分组，部分实现还会 flatten / pack，以减少调度或 collective 开销                      |
+| KV / Shared Memory   |               低 | TorchForge                                                                          | 通过 key-value store 协调，用共享内存预取数据                                              |
+| Filesystem + HTTP    |               中 | PRIME-RL、AReaL、ART                                                                | 文件承载权重，HTTP 负责通知、版本与加载控制                                                |
+| CUDA IPC             |             很低 | NeMo-RL、MILES                                                                      | 同机 GPU 间传递 CUDA memory handle，避免网络和多余拷贝                                     |
+| JAX Cross-mesh       |               低 | Tunix                                                                               | 在不同 JAX device mesh 之间 reshard / `device_put`                                         |
+| HTTP PUT             |               高 | verifiers-rl                                                                        | 这是综述 Axis 3 的原始标注；同日期源码实际是 HTTP 控制请求 + PyNCCL 数据广播，详见版本说明 |
+| Filesystem + Restart |             很高 | Atropos                                                                             | 保存 checkpoint 后重启或重载推理服务，最朴素也最慢                                         |
 
 同一框架可能同时出现在多行中，因为它会针对 colocated、同机 disaggregated 或跨节点部署提供不同 backend。表中用“或”连接的路径是可选项，不表示一次同步必须依次经过所有机制。
 
@@ -227,12 +227,12 @@ Tunix 位于 JAX / XLA 生态。训练 mesh 和推理 mesh 的 sharding 可以�
 
 原文称方案可以归纳为 “five conceptual tiers”，但当前表格实际只列出四档。本文按表格中的四种中断粒度整理，不补造第五档。
 
-| 中断粒度 | 权重到达时发生什么 | 原综述列出的框架（未经代码校勘） |
-|---|---|---|
-| In-flight / per-forward-pass | sequence 不停止，在相邻 decode forward 之间切换权重 | PipelineRL、open-instruct（可选） |
-| Per HTTP request：abort + resync | 终止在途请求，保存 partial tokens，再 prefix-resume 或放回队列重试 | SkyRL、SLIME、MILES |
-| Soft pause：drain in-flight | 停止接收新请求，让已开始的请求自然结束，再同步权重 | PRIME-RL、AReaL、open-instruct（默认）、verl（async） |
-| Per training step / batch | 等完整生成 batch 结束，训练和推理在同步点互相阻塞 | NeMo-RL、ROLL、OAT、TorchForge、Tunix、verifiers-rl、Atropos |
+| 中断粒度                         | 权重到达时发生什么                                                 | 原综述列出的框架（未经代码校勘）                             |
+| -------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------ |
+| In-flight / per-forward-pass     | sequence 不停止，在相邻 decode forward 之间切换权重                | PipelineRL、open-instruct（可选）                            |
+| Per HTTP request：abort + resync | 终止在途请求，保存 partial tokens，再 prefix-resume 或放回队列重试 | SkyRL、SLIME、MILES                                          |
+| Soft pause：drain in-flight      | 停止接收新请求，让已开始的请求自然结束，再同步权重                 | PRIME-RL、AReaL、open-instruct（默认）、verl（async）        |
+| Per training step / batch        | 等完整生成 batch 结束，训练和推理在同步点互相阻塞                  | NeMo-RL、ROLL、OAT、TorchForge、Tunix、verifiers-rl、Atropos |
 
 这张表是对原综述 Axis 3 的复述，不是代码审计后的最终事实。后文固定到 2026 年 3 月同日代码后可以看到，AReaL 实际会 abort 在途请求，NeMo-RL 已有可选 in-flight update，PRIME-RL 也没有明确的 active-request natural drain；因此框架选型应以后面的校勘表为准。
 
@@ -299,12 +299,12 @@ ART 没有出现在 Axis 3 的 interrupt table 中。综述后文把它描述为
 
 “是否阻塞”还不够描述一个协议。至少应分别检查三层一致性：
 
-| 一致性层级 | 要求 | 违反后的现象 |
-|---|---|---|
-| Parameter-set atomicity | 一次 commit 要么发布完整 $W_k$，要么继续使用完整 $W_{k-1}$ | 推理模型由新旧 layer / tensor 拼成 |
-| Forward atomicity | 一次 transformer forward 期间参数版本不变化 | 单个 token 的 logits 由不稳定参数集合计算 |
+| 一致性层级                | 要求                                                                       | 违反后的现象                                        |
+| ------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |
+| Parameter-set atomicity   | 一次 commit 要么发布完整 $W_k$，要么继续使用完整 $W_{k-1}$                 | 推理模型由新旧 layer / tensor 拼成                  |
+| Forward atomicity         | 一次 transformer forward 期间参数版本不变化                                | 单个 token 的 logits 由不稳定参数集合计算           |
 | Cache / state consistency | decode 使用的 KV / prefix state 与当前参数版本兼容，或明确记录其跨版本语义 | 参数已是 $W_k$，attention state 仍由 $W_{k-1}$ 计算 |
-| Sequence homogeneity | 一条 sequence 的全部 token 来自同一版本 | trajectory 内部存在分段 policy version |
+| Sequence homogeneity      | 一条 sequence 的全部 token 来自同一版本                                    | trajectory 内部存在分段 policy version              |
 
 不同方案做的是不同选择：
 
@@ -333,24 +333,24 @@ resume / abort boundary
 
 下表把原综述的 transport、interrupt、partial-rollout 和 global-overview 信息合并到同一视图。它适合用来理解设计空间，不应替代对具体版本代码和配置的检查。
 
-| 框架 | 权重传输路径 | 权重切换与在途 rollout | 主要取舍 |
-|---|---|---|---|
-| [AReaL](https://github.com/inclusionAI/AReaL) | Chunked / bucketed NCCL，或 filesystem safetensors + HTTP | 暂停入口并 abort running / waiting requests，再同步和恢复；partial rollout 的后续处理取决于上层 rollout 管理 | 同步边界明确且不等待最长请求，但会中断在途生成 |
-| [ART](https://github.com/OpenPipe/ART) | 保存并 hot-swap LoRA adapter，base model 不传输 | gather-all-then-train；同步时原则上没有在途请求 | adapter 很小、实现清楚，但不是 generation / training 真正持续重叠的模式 |
-| [Atropos](https://github.com/NousResearch/atropos) | filesystem checkpoint + inference restart / reload | batch boundary，无 partial rollout | 最容易跨服务实现，延迟和重启开销最大 |
-| [MILES](https://github.com/radixark/miles) | Disaggregated 使用 NCCL；同机场景可用 CUDA IPC | abort 当前请求，把 partial rollout recycle 回 buffer | 更快接收新权重，但需要可靠保存和重放 partial work |
-| [NeMo-RL](https://github.com/NVIDIA-NeMo/RL) | 非共置使用 NCCL；共置 vLLM 可用 CUDA IPC + ZMQ，SGLang 使用 HTTP | 原文 Axis 3 表列为 step / batch blocking；同日期官方实现已支持可选 in-flight update，关闭该选项时 drain | transport 抽象完整，但 Axis 3 的无条件 blocking 归类不准确 |
-| [OAT](https://github.com/sail-sg/oat) | ZeRO-3 gather 后逐参数 NCCL | training-step / batch boundary，无 partial rollout | 逻辑直接；逐参数调用和 blocking 限制 overlap |
-| [open-instruct](https://github.com/allenai/open-instruct) | NCCL broadcast | 默认 drain；可选 in-flight per-parameter update | 一套系统可选强一致性或最大 overlap；in-flight 模式的一致性最弱 |
-| [PipelineRL](https://github.com/ServiceNow/PipelineRL) | 独立 NCCL process group + HTTP notification | per-forward atomic swap；sequence 隐式继续 | 几乎不停止生成，但 trajectory 可能跨多个 policy version |
-| [PRIME-RL](https://github.com/PrimeIntellect-ai/prime-rl) | Filesystem safetensors + HTTP，或 NCCL | 原综述归入 soft pause；官方快照是 vLLM collective RPC 安装、reset prefix cache，随后取消超龄 group，未见显式 natural drain | 多种传输适应不同部署；需要协调更新、group cancellation 和废弃结果 |
-| [ROLL](https://github.com/alibaba/ROLL) | Dedicated update group 上的 NCCL | training-step / batch blocking，无通用 partial resume | 后端覆盖广、语义直接，但更新形成粗粒度 barrier |
-| [SkyRL](https://github.com/NovaSky-AI/SkyRL) | NCCL process group | abort + retry with prefix | 适合长 rollout 的细粒度重同步；代价是 abort 与 prefix prefill |
-| [SLIME](https://github.com/THUDM/slime) | NCCL process group + size-bounded parameter buckets | abort + recycle partial rollout | 兼顾较快传输与 partial reuse，但它不是 vLLM packed flat-buffer；token、logprob、版本边界管理也更复杂 |
-| [TorchForge](https://github.com/meta-pytorch/torchforge) | torchstore / KV coordination + shared-memory prefetch | batch blocking，无 partial rollout | PyTorch-native actor 体系、同机路径高效；同步粒度仍较粗 |
-| [Tunix](https://github.com/google/tunix) | JAX cross-mesh reshard / transfer | batch blocking，无 partial rollout | 适合 TPU / XLA mesh，不能直接套用 PyTorch process-group 实现 |
-| [verl](https://github.com/verl-project/verl) | NCCL + checkpoint-engine buckets | async 模式可 drain；fully async 路径保存 partial token / logprob 后恢复 | 传输和 partial rollout 能力完整，但状态机与版本管理更复杂 |
-| [verifiers-rl](https://github.com/PrimeIntellect-ai/verifiers) | HTTP POST 传参数 metadata，tensor 经 PyNCCL broadcast | depth-1 / batch boundary，无 partial rollout | 浅流水线限制 staleness；Axis 3 的 “HTTP PUT” 把控制面误写成了权重数据面 |
+| 框架                                                           | 权重传输路径                                                     | 权重切换与在途 rollout                                                                                                     | 主要取舍                                                                                             |
+| -------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [AReaL](https://github.com/inclusionAI/AReaL)                  | Chunked / bucketed NCCL，或 filesystem safetensors + HTTP        | 暂停入口并 abort running / waiting requests，再同步和恢复；partial rollout 的后续处理取决于上层 rollout 管理               | 同步边界明确且不等待最长请求，但会中断在途生成                                                       |
+| [ART](https://github.com/OpenPipe/ART)                         | 保存并 hot-swap LoRA adapter，base model 不传输                  | gather-all-then-train；同步时原则上没有在途请求                                                                            | adapter 很小、实现清楚，但不是 generation / training 真正持续重叠的模式                              |
+| [Atropos](https://github.com/NousResearch/atropos)             | filesystem checkpoint + inference restart / reload               | batch boundary，无 partial rollout                                                                                         | 最容易跨服务实现，延迟和重启开销最大                                                                 |
+| [MILES](https://github.com/radixark/miles)                     | Disaggregated 使用 NCCL；同机场景可用 CUDA IPC                   | abort 当前请求，把 partial rollout recycle 回 buffer                                                                       | 更快接收新权重，但需要可靠保存和重放 partial work                                                    |
+| [NeMo-RL](https://github.com/NVIDIA-NeMo/RL)                   | 非共置使用 NCCL；共置 vLLM 可用 CUDA IPC + ZMQ，SGLang 使用 HTTP | 原文 Axis 3 表列为 step / batch blocking；同日期官方实现已支持可选 in-flight update，关闭该选项时 drain                    | transport 抽象完整，但 Axis 3 的无条件 blocking 归类不准确                                           |
+| [OAT](https://github.com/sail-sg/oat)                          | ZeRO-3 gather 后逐参数 NCCL                                      | training-step / batch boundary，无 partial rollout                                                                         | 逻辑直接；逐参数调用和 blocking 限制 overlap                                                         |
+| [open-instruct](https://github.com/allenai/open-instruct)      | NCCL broadcast                                                   | 默认 drain；可选 in-flight per-parameter update                                                                            | 一套系统可选强一致性或最大 overlap；in-flight 模式的一致性最弱                                       |
+| [PipelineRL](https://github.com/ServiceNow/PipelineRL)         | 独立 NCCL process group + HTTP notification                      | per-forward atomic swap；sequence 隐式继续                                                                                 | 几乎不停止生成，但 trajectory 可能跨多个 policy version                                              |
+| [PRIME-RL](https://github.com/PrimeIntellect-ai/prime-rl)      | Filesystem safetensors + HTTP，或 NCCL                           | 原综述归入 soft pause；官方快照是 vLLM collective RPC 安装、reset prefix cache，随后取消超龄 group，未见显式 natural drain | 多种传输适应不同部署；需要协调更新、group cancellation 和废弃结果                                    |
+| [ROLL](https://github.com/alibaba/ROLL)                        | Dedicated update group 上的 NCCL                                 | training-step / batch blocking，无通用 partial resume                                                                      | 后端覆盖广、语义直接，但更新形成粗粒度 barrier                                                       |
+| [SkyRL](https://github.com/NovaSky-AI/SkyRL)                   | NCCL process group                                               | abort + retry with prefix                                                                                                  | 适合长 rollout 的细粒度重同步；代价是 abort 与 prefix prefill                                        |
+| [SLIME](https://github.com/THUDM/slime)                        | NCCL process group + size-bounded parameter buckets              | abort + recycle partial rollout                                                                                            | 兼顾较快传输与 partial reuse，但它不是 vLLM packed flat-buffer；token、logprob、版本边界管理也更复杂 |
+| [TorchForge](https://github.com/meta-pytorch/torchforge)       | torchstore / KV coordination + shared-memory prefetch            | batch blocking，无 partial rollout                                                                                         | PyTorch-native actor 体系、同机路径高效；同步粒度仍较粗                                              |
+| [Tunix](https://github.com/google/tunix)                       | JAX cross-mesh reshard / transfer                                | batch blocking，无 partial rollout                                                                                         | 适合 TPU / XLA mesh，不能直接套用 PyTorch process-group 实现                                         |
+| [verl](https://github.com/verl-project/verl)                   | NCCL + checkpoint-engine buckets                                 | async 模式可 drain；fully async 路径保存 partial token / logprob 后恢复                                                    | 传输和 partial rollout 能力完整，但状态机与版本管理更复杂                                            |
+| [verifiers-rl](https://github.com/PrimeIntellect-ai/verifiers) | HTTP POST 传参数 metadata，tensor 经 PyNCCL broadcast            | depth-1 / batch boundary，无 partial rollout                                                                               | 浅流水线限制 staleness；Axis 3 的 “HTTP PUT” 把控制面误写成了权重数据面                              |
 
 ### 版本边界与原文口径差异
 
@@ -378,13 +378,13 @@ resume / abort boundary
 
 ### 1. 先按部署拓扑排除不可能项
 
-| 场景 | 更自然的起点 | 原因 |
-|---|---|---|
+| 场景                        | 更自然的起点                             | 原因                                                            |
+| --------------------------- | ---------------------------------------- | --------------------------------------------------------------- |
 | trainer 与 rollout 共用 GPU | sleep / wake、in-place reshard、CUDA IPC | 不需要跨节点搬运完整权重，但无法真正同时使用同一 GPU 训练和生成 |
-| 同节点、不同 GPU / 进程 | CUDA IPC、shared memory、NCCL | 可以利用本机高速互联并避免文件落盘 |
-| 同集群、独立 GPU 池 | NCCL + packing / bucketing | GPU-direct、高带宽，适合频繁 full-weight sync |
-| 网络受限或服务边界强 | filesystem / object store + HTTP | 运维边界清楚，容易重试、回滚和审计 |
-| JAX / TPU | cross-mesh transfer | 参数布局和运行时原语与 PyTorch 路径不同 |
+| 同节点、不同 GPU / 进程     | CUDA IPC、shared memory、NCCL            | 可以利用本机高速互联并避免文件落盘                              |
+| 同集群、独立 GPU 池         | NCCL + packing / bucketing               | GPU-direct、高带宽，适合频繁 full-weight sync                   |
+| 网络受限或服务边界强        | filesystem / object store + HTTP         | 运维边界清楚，容易重试、回滚和审计                              |
+| JAX / TPU                   | cross-mesh transfer                      | 参数布局和运行时原语与 PyTorch 路径不同                         |
 
 ### 2. 再按 rollout 时长决定中断粒度
 

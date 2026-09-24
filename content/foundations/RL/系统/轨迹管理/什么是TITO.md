@@ -118,13 +118,13 @@ B
 例如 rollout 侧真实采样的是紧凑 JSON：
 
 ```json
-{"name":"bash","arguments":{"cmd":"ls"}}
+{ "name": "bash", "arguments": { "cmd": "ls" } }
 ```
 
 下一轮模板重渲染时可能变成：
 
 ```json
-{"name": "bash", "arguments": {"cmd": "ls"}}
+{ "name": "bash", "arguments": { "cmd": "ls" } }
 ```
 
 两者语义完全一样，但字节不同，token IDs 也可能不同。TITO 关心的不是 JSON 语义是否等价，而是下一轮 prompt 是否原样包含上一轮模型生成过的 token。parse-then-serialize 的默认行为通常做不到这一点。

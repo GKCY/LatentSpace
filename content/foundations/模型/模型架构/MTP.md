@@ -25,11 +25,11 @@ MTP 给同一个 hidden state 增加了几道更远的问题：
 
 围绕 MTP 的讨论经常把训练目标、网络结构和解码算法混成一件事。它们其实是三个层次：
 
-| 层次 | 要回答的问题 | MTP 中的典型做法 |
-| --- | --- | --- |
-| 训练目标 | 每个位置监督哪些未来 token？ | 同时对 $x_{t+1},\ldots,x_{t+n}$ 计算 loss |
-| 网络结构 | 用什么模块产生这些分布？ | 并行独立 heads，或顺序连接的 MTP modules |
-| 解码算法 | 候选 token 怎样成为最终输出？ | draft 后由主模型 verify，接受合法前缀 |
+| 层次     | 要回答的问题                  | MTP 中的典型做法                          |
+| -------- | ----------------------------- | ----------------------------------------- |
+| 训练目标 | 每个位置监督哪些未来 token？  | 同时对 $x_{t+1},\ldots,x_{t+n}$ 计算 loss |
+| 网络结构 | 用什么模块产生这些分布？      | 并行独立 heads，或顺序连接的 MTP modules  |
+| 解码算法 | 候选 token 怎样成为最终输出？ | draft 后由主模型 verify，接受合法前缀     |
 
 因此，“某模型使用 MTP”至少可能有三种含义：
 
@@ -93,12 +93,12 @@ target             天气      很      好      。
 
 如果改成 3-token prediction，同一个位置会收到三组目标：
 
-| 上下文截止位置 | 距离 1 | 距离 2 | 距离 3 |
-| --- | --- | --- | --- |
-| 今天 | 天气 | 很 | 好 |
-| 天气 | 很 | 好 | 。 |
-| 很 | 好 | 。 | 无有效目标 |
-| 好 | 。 | 无有效目标 | 无有效目标 |
+| 上下文截止位置 | 距离 1 | 距离 2     | 距离 3     |
+| -------------- | ------ | ---------- | ---------- |
+| 今天           | 天气   | 很         | 好         |
+| 天气           | 很     | 好         | 。         |
+| 很             | 好     | 。         | 无有效目标 |
+| 好             | 。     | 无有效目标 | 无有效目标 |
 
 序列尾部没有足够远的未来 token，因此不同预测距离拥有不同数量的有效 label；实现时必须切片或 mask，不能让 padding、越界位置混入 loss。
 
@@ -328,13 +328,13 @@ Qwen3-Next 延续了原生 MTP 思路，并特别强调 multi-step training。�
 
 ### 4.4 三种口径放在一起
 
-| 项目 | Meta 并行 MTP | DeepSeek 顺序 MTP | Qwen 原生 MTP |
-| --- | --- | --- | --- |
-| future head 关系 | 各 head 从共享 trunk 独立预测 | 按深度顺序连接 | 顺序 draft，并强调多步训练 |
-| 第 $k$ 步是否读取前一步 token | 否 | 是；训练时读 ground truth embedding | 多步训练中尽量贴近推理使用 |
-| embedding / LM head | 共享 unembedding | 与主模型共享 embedding 和 output head | 通常与主模型共享体系 |
-| 主要目标 | 改善预训练，也可 self-speculate | 首先改善主模型，也可 speculate | 同时改善 backbone 与 draft 接受率 |
-| 普通推理能否不调用模块 | 可以 | 可以 | 可以，但会失去 MTP draft |
+| 项目                          | Meta 并行 MTP                   | DeepSeek 顺序 MTP                     | Qwen 原生 MTP                     |
+| ----------------------------- | ------------------------------- | ------------------------------------- | --------------------------------- |
+| future head 关系              | 各 head 从共享 trunk 独立预测   | 按深度顺序连接                        | 顺序 draft，并强调多步训练        |
+| 第 $k$ 步是否读取前一步 token | 否                              | 是；训练时读 ground truth embedding   | 多步训练中尽量贴近推理使用        |
+| embedding / LM head           | 共享 unembedding                | 与主模型共享 embedding 和 output head | 通常与主模型共享体系              |
+| 主要目标                      | 改善预训练，也可 self-speculate | 首先改善主模型，也可 speculate        | 同时改善 backbone 与 draft 接受率 |
+| 普通推理能否不调用模块        | 可以                            | 可以                                  | 可以，但会失去 MTP draft          |
 
 ## 5. MTP 为什么可能改善模型能力
 
@@ -713,11 +713,11 @@ MTP 主要优化 decode 阶段，通常不会让长 prompt 的 prefill 自动变
 
 同一个 MTP checkpoint 可以有三种使用模式：
 
-| 模式 | MTP module | 输出路径 | 主模型能力 | 推理成本 |
-| --- | --- | --- | --- | --- |
-| MTP 训练 | 保留并参与反向传播 | 多个 horizon 都算 loss | 主干被辅助目标塑形 | 增加训练计算与参数 |
-| 普通自回归推理 | 删除或不调用 | 只用正式 next-token head | 保留训练后的主干能力 | 与普通主模型基本相同 |
-| MTP speculative 推理 | 加载并调用 | draft → verify → accept | 目标分布由 verifier 决定 | 多一些计算，少一些串行步 |
+| 模式                 | MTP module         | 输出路径                 | 主模型能力               | 推理成本                 |
+| -------------------- | ------------------ | ------------------------ | ------------------------ | ------------------------ |
+| MTP 训练             | 保留并参与反向传播 | 多个 horizon 都算 loss   | 主干被辅助目标塑形       | 增加训练计算与参数       |
+| 普通自回归推理       | 删除或不调用       | 只用正式 next-token head | 保留训练后的主干能力     | 与普通主模型基本相同     |
+| MTP speculative 推理 | 加载并调用         | draft → verify → accept  | 目标分布由 verifier 决定 | 多一些计算，少一些串行步 |
 
 这张表解释了两个看似矛盾的说法为什么都成立：
 
@@ -732,10 +732,10 @@ MTP 主要优化 decode 阶段，通常不会让长 prompt 的 prefill 自动变
 
 Meta/FAIR 在 300M 到 13B 的 decoder-only 代码模型上做了等参数、等计算预算比较。13B 模型中，4-token prediction 相对 NTP 的结果包括：
 
-| Benchmark | NTP $n=1$ | MTP $n=4$ | 变化 |
-| --- | ---: | ---: | ---: |
-| MBPP pass@1 | 26.0 | 30.5 | +4.5 个百分点，约 +17.3% 相对提升 |
-| HumanEval pass@1 | 14.1 | 15.8 | +1.7 个百分点，约 +12.1% 相对提升 |
+| Benchmark        | NTP $n=1$ | MTP $n=4$ |                              变化 |
+| ---------------- | --------: | --------: | --------------------------------: |
+| MBPP pass@1      |      26.0 |      30.5 | +4.5 个百分点，约 +17.3% 相对提升 |
+| HumanEval pass@1 |      14.1 |      15.8 | +1.7 个百分点，约 +12.1% 相对提升 |
 
 论文摘要中的“多解决 12% / 17% 问题”指相对提升，不是 12 或 17 个百分点。
 
@@ -755,13 +755,13 @@ Meta/FAIR 在 300M 到 13B 的 decoder-only 代码模型上做了等参数、等
 
 DeepSeek 在两个 MoE 规模上比较 baseline 与 1-depth MTP，并在评测时直接丢弃 MTP module，因此两组普通推理成本相同。部分结果如下：
 
-| 模型规模 | Benchmark | Baseline | w/ MTP |
-| --- | --- | ---: | ---: |
-| 15.7B total / 2.4B active | HumanEval pass@1 | 20.7 | 26.8 |
-| 15.7B total / 2.4B active | GSM8K | 25.4 | 31.4 |
-| 228.7B total / 20.9B active | HumanEval pass@1 | 44.5 | 53.7 |
-| 228.7B total / 20.9B active | DROP | 68.5 | 70.6 |
-| 228.7B total / 20.9B active | MMLU | 67.5 | 66.6 |
+| 模型规模                    | Benchmark        | Baseline | w/ MTP |
+| --------------------------- | ---------------- | -------: | -----: |
+| 15.7B total / 2.4B active   | HumanEval pass@1 |     20.7 |   26.8 |
+| 15.7B total / 2.4B active   | GSM8K            |     25.4 |   31.4 |
+| 228.7B total / 20.9B active | HumanEval pass@1 |     44.5 |   53.7 |
+| 228.7B total / 20.9B active | DROP             |     68.5 |   70.6 |
+| 228.7B total / 20.9B active | MMLU             |     67.5 |   66.6 |
 
 多数指标改善不意味着所有指标都改善：大模型 MMLU 从 67.5 降到 66.6，小模型 NaturalQuestions 也从 22.7 降到 22.3。更准确的结论是“这套配方在该消融中整体有利”，而不是 MTP 对每项能力单调提升。
 
@@ -781,15 +781,15 @@ MTP 不是凭空出现的。2018 年的 Blockwise Parallel Decoding 已经使用
 
 现代几类方法的边界如下：
 
-| 方法 | draft 从哪里来 | 是否改变 backbone 训练 | 是否显式建模前序候选 | 主要目的 |
-| --- | --- | --- | --- | --- |
-| 原生 MTP | 主模型自带 future heads / modules | 通常是，从预训练开始联合优化 | 并行版否；顺序版是 | 改善训练，也可加速 |
-| Medusa-1 | 主模型上的多个 decoding heads | backbone 冻结 | 多头并行，并构造候选树 | 后训练推理加速 |
-| Medusa-2 | 多头与 backbone 联合训练 | 是，需要保能力配方 | 多头并行 + tree verify | 更高接受率与加速 |
-| EAGLE-1 / 2 | 轻量 draft 模型预测接近顶层的 feature | 否；目标 LLM 冻结，只训练 drafter | 是，递归读取提前一位的 token | 推理加速 |
-| EAGLE-3 | 融合目标模型多层 feature 后直接预测 token | 否；目标 LLM 冻结，只训练 drafter | 是，自回归地产生 draft | 推理加速 |
-| 外置 draft model | 一台独立小语言模型 | 否 | 是，标准自回归 | 通用 speculative decoding |
-| 非自回归生成 | 模型直接并行提交多个位置 | 需要专门训练 | 依方法而定 | 减少或消除 AR 步骤 |
+| 方法             | draft 从哪里来                            | 是否改变 backbone 训练            | 是否显式建模前序候选         | 主要目的                  |
+| ---------------- | ----------------------------------------- | --------------------------------- | ---------------------------- | ------------------------- |
+| 原生 MTP         | 主模型自带 future heads / modules         | 通常是，从预训练开始联合优化      | 并行版否；顺序版是           | 改善训练，也可加速        |
+| Medusa-1         | 主模型上的多个 decoding heads             | backbone 冻结                     | 多头并行，并构造候选树       | 后训练推理加速            |
+| Medusa-2         | 多头与 backbone 联合训练                  | 是，需要保能力配方                | 多头并行 + tree verify       | 更高接受率与加速          |
+| EAGLE-1 / 2      | 轻量 draft 模型预测接近顶层的 feature     | 否；目标 LLM 冻结，只训练 drafter | 是，递归读取提前一位的 token | 推理加速                  |
+| EAGLE-3          | 融合目标模型多层 feature 后直接预测 token | 否；目标 LLM 冻结，只训练 drafter | 是，自回归地产生 draft       | 推理加速                  |
+| 外置 draft model | 一台独立小语言模型                        | 否                                | 是，标准自回归               | 通用 speculative decoding |
+| 非自回归生成     | 模型直接并行提交多个位置                  | 需要专门训练                      | 依方法而定                   | 减少或消除 AR 步骤        |
 
 ### 10.1 MTP 与 Medusa
 
@@ -845,15 +845,15 @@ EAGLE-3 已经放弃 feature-prediction 训练目标：它在训练时融合目�
 
 至少同时报告：
 
-| 指标 | 它回答的问题 |
-| --- | --- |
+| 指标                          | 它回答的问题                                     |
+| ----------------------------- | ------------------------------------------------ |
 | 每深度 conditional acceptance | 已接受前缀成立时，第 $k$ 个 draft 还能否被接受？ |
-| 平均接受长度 | 每次 verify 实际省掉多少串行步？ |
-| inter-token latency | 单请求逐 token 延迟是否下降？ |
-| tokens/s 与 QPS | 并发吞吐是否真的提高？ |
-| draft / verify 时间拆分 | 时间花在 MTP、主模型还是调度？ |
-| 额外显存 | MTP 权重、KV cache 和 workspace 需要多少资源？ |
-| 输出一致性 | greedy 是否逐 token 相同，采样分布是否通过校验？ |
+| 平均接受长度                  | 每次 verify 实际省掉多少串行步？                 |
+| inter-token latency           | 单请求逐 token 延迟是否下降？                    |
+| tokens/s 与 QPS               | 并发吞吐是否真的提高？                           |
+| draft / verify 时间拆分       | 时间花在 MTP、主模型还是调度？                   |
+| 额外显存                      | MTP 权重、KV cache 和 workspace 需要多少资源？   |
+| 输出一致性                    | greedy 是否逐 token 相同，采样分布是否通过校验？ |
 
 “第二 token 接受率 90%”和“平均接受 2.5 个 token”不是同一个统计量；比较系统前必须统一分母和深度定义。
 

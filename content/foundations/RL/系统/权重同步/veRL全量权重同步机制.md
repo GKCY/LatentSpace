@@ -48,20 +48,20 @@ $$
 
 rollout 权重同步只服务于在线推理 refit：
 
-~~~text
+```text
 optimizer.step()
     │
     ├─ 从训练 shard 导出最新模型参数
     ├─ 在线传给 rollout worker
     ├─ 写入推理引擎
     └─ 清理旧权重关联的推理缓存
-~~~
+```
 
 它不会为了每个训练 step 先落一份可恢复 checkpoint，也不会同步 optimizer state。
 
 ### 3. 一次同步至少有六段成本
 
-~~~text
+```text
 actor local shards
   │
   ├─ 1. materialize：从训练分片重建逻辑 tensor
@@ -70,7 +70,7 @@ actor local shards
   ├─ 4. local handoff：同 GPU 跨进程 CUDA IPC / shared memory
   ├─ 5. install：推理 loader 写入 TP/EP 本地参数
   └─ 6. control：暂停请求、清 cache、恢复生成
-~~~
+```
 
 可以粗略记为：
 
@@ -88,7 +88,7 @@ $$
 
 veRL 当前实现已经不再以旧版 `FSDPVLLMShardingManager` 为中心。主调用链是：
 
-~~~text
+```text
 PPO trainer
   │
   └─ CheckpointEngineManager.update_weights(global_steps)
@@ -102,22 +102,22 @@ PPO trainer
             ├─ actor CheckpointEngine.send_weights()
             └─ rollout CheckpointEngine.receive_weights()
                  └─ ServerAdapter.update_weights()
-~~~
+```
 
 三个抽象的职责边界很清楚：
 
-| 组件 | 主要职责 | 不负责什么 |
-|---|---|---|
-| Model Engine | 从 FSDP、Megatron、VeOmni 等训练布局导出 HF 语义 tensor | 不决定 rollout 的本地 TP slice |
-| Checkpoint Engine | 在分离部署时跨 actor/rollout 节点传输权重流 | 不等于磁盘 checkpoint |
-| ServerAdapter | 把 tensor 交给 vLLM/SGLang，并处理引擎生命周期 | 不负责 optimizer 或反向传播 |
+| 组件              | 主要职责                                                | 不负责什么                     |
+| ----------------- | ------------------------------------------------------- | ------------------------------ |
+| Model Engine      | 从 FSDP、Megatron、VeOmni 等训练布局导出 HF 语义 tensor | 不决定 rollout 的本地 TP slice |
+| Checkpoint Engine | 在分离部署时跨 actor/rollout 节点传输权重流             | 不等于磁盘 checkpoint          |
+| ServerAdapter     | 把 tensor 交给 vLLM/SGLang，并处理引擎生命周期          | 不负责 optimizer 或反向传播    |
 
 全量路径默认的 wire contract 是：
 
-~~~text
+```text
 wire_format = named_tensors
 item        = (parameter_name, full_logical_tensor)
-~~~
+```
 
 定义可见 [`CheckpointEngine`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/checkpoint_engine/base.py#L96-L205) 和 [`BaseRollout.update_weights`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/base.py#L49-L64)。
 
@@ -125,11 +125,11 @@ item        = (parameter_name, full_logical_tensor)
 
 当前 [`CheckpointEngineConfig`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/config/rollout.py#L124-L141) 的关键默认值是：
 
-~~~yaml
+```yaml
 checkpoint_engine:
   backend: naive
   update_weights_bucket_megabytes: 2048
-~~~
+```
 
 `naive` 适用于 trainer 与 rollout colocated 的常规同步训练；NCCL Checkpoint Engine 主要解决 actor GPU 池与 rollout GPU 池分离时的跨节点全量广播。
 
@@ -143,7 +143,7 @@ checkpoint_engine:
 
 典型时序是：
 
-~~~text
+```text
 第 k 轮 rollout（使用 W_k）
        │
        ▼
@@ -157,7 +157,7 @@ update_weights(global_steps=k+1)
        │
        ▼
 第 k+1 轮 rollout（使用 W_(k+1)）
-~~~
+```
 
 在同步训练中，更新天然位于 generation 与下一次 generation 之间。在支持 partial rollout 的分离式流程中，管理器还会先中止并保存未完成请求，安装新权重后再恢复它们。
 
@@ -172,7 +172,7 @@ update_weights(global_steps=k+1)
 
 训练后端与 rollout 后端可以使用完全不同的并行拓扑。veRL 没有要求 rollout 直接理解 actor 的 shard，而是把 HF named tensor 作为中间语义层：
 
-~~~text
+```text
 FSDP / Megatron / VeOmni training layout
                     │
                     │ ModelEngine exporter
@@ -182,7 +182,7 @@ FSDP / Megatron / VeOmni training layout
                     │ rollout loader
                     ▼
         vLLM / SGLang local TP/EP layout
-~~~
+```
 
 这相当于把复杂问题拆成两个转换：
 
@@ -191,12 +191,12 @@ FSDP / Megatron / VeOmni training layout
 
 ### 1. 不同 Model Engine 的导出方式
 
-| 训练后端 | 全量导出的主要动作 |
-|---|---|
-| FSDP | 取得 state dict，转换 key，对 DTensor 逐项 `full_tensor()`，再处理 MoE unfuse |
-| Megatron | 通过 Megatron Bridge 导出，完成 TP/PP/EP fusion 和 HF key 映射 |
-| VeOmni | 逐项聚合 DTensor，并对 EP expert 做 broadcast、restack 和模型专用转换 |
-| TorchTitan | 通过 state-dict adapter 转 HF 命名，并处理 tied weight、EP gather |
+| 训练后端   | 全量导出的主要动作                                                            |
+| ---------- | ----------------------------------------------------------------------------- |
+| FSDP       | 取得 state dict，转换 key，对 DTensor 逐项 `full_tensor()`，再处理 MoE unfuse |
+| Megatron   | 通过 Megatron Bridge 导出，完成 TP/PP/EP fusion 和 HF key 映射                |
+| VeOmni     | 逐项聚合 DTensor，并对 EP expert 做 broadcast、restack 和模型专用转换         |
+| TorchTitan | 通过 state-dict adapter 转 HF 命名，并处理 tied weight、EP gather             |
 
 Megatron 当前入口见 [`get_per_tensor_param`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/engine/megatron/transformer_impl.py#L1007-L1045)。它不是把某个 TP rank 的 local shard 原样发给 rollout，而是借助 Bridge 导出推理 loader 能理解的逻辑权重。
 
@@ -218,7 +218,7 @@ $$
 
 当前 FSDP 实现位于 [`FSDPEngine.get_per_tensor_param`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/engine/fsdp/transformer_impl.py#L949-L1033)，核心逻辑可以简化为：
 
-~~~python
+```python
 params = module.state_dict()
 params = convert_weight_keys(params, module)
 
@@ -231,18 +231,18 @@ per_tensor_param = (
     )
     for name, param in params.items()
 )
-~~~
+```
 
 ### 1. 为什么 generator 很重要
 
 如果先把全部 DTensor 都 all-gather，再构造一个完整 GPU state dict，峰值显存会接近“训练 shard + 一整份 full model + rollout weights”。generator 将这一过程改成按需发生：
 
-~~~text
+```text
 消费 W1 → all-gather W1 → 发送/加载 W1
 消费 W2 → all-gather W2 → 发送/加载 W2
 ...
 消费 Wn → all-gather Wn → 发送/加载 Wn
-~~~
+```
 
 这避免了额外的整模型副本，但没有消除每个 tensor 的 all-gather，也不能让单个超大 tensor 的峰值消失。
 
@@ -264,10 +264,10 @@ per_tensor_param = (
 
 官方 [PR #7005](https://github.com/verl-project/verl/pull/7005) 在 Qwen2.5-7B、2 节点、8 GPU FSDP2 trainer + 8 GPU SGLang、参数 offload 开启的特定测试中报告：
 
-| 指标 | 优化前 | 优化后 |
-|---|---:|---:|
-| exporter 创建阶段 | 3.3～4.5 s | 约 0.07 s |
-| 每步全量同步 | 6.65～6.93 s | 3.36～3.49 s |
+| 指标              |       优化前 |       优化后 |
+| ----------------- | -----------: | -----------: |
+| exporter 创建阶段 |   3.3～4.5 s |    约 0.07 s |
+| 每步全量同步      | 6.65～6.93 s | 3.36～3.49 s |
 
 这是工作负载相关的 PR 数据，不是所有模型上的固定收益。
 
@@ -281,7 +281,7 @@ per_tensor_param = (
 
 其顺序可以还原为：
 
-~~~text
+```text
 ActorRolloutRefWorker.update_weights(mode="naive")
   │
   ├─ 关闭 expandable-segments，清理 allocator cache
@@ -291,7 +291,7 @@ ActorRolloutRefWorker.update_weights(mode="naive")
   ├─ actor 参数重新 offload 到 CPU          # param_offload 开启时
   ├─ 清理 allocator cache
   └─ rollout.resume(tags=["kv_cache"])
-~~~
+```
 
 这里有两个常见误解。
 
@@ -299,13 +299,13 @@ ActorRolloutRefWorker.update_weights(mode="naive")
 
 Model Engine worker 和 vLLM/SGLang inference worker 可以在同一 GPU 上，但处于不同进程。veRL 仍需要一条同 GPU 跨进程通道：
 
-~~~text
+```text
 actor process
    │
    │ CUDA IPC handle + ZMQ metadata
    ▼
 vLLM worker process on the same GPU
-~~~
+```
 
 因此，即使没有跨节点 NCCL，仍有 bucket copy、IPC 握手和 `model.load_weights()` 成本。
 
@@ -319,7 +319,7 @@ vLLM worker process on the same GPU
 
 当 trainer GPU 池与 rollout GPU 池分离时，数据路径多出一跳：
 
-~~~text
+```text
 Actor FSDP group                           Checkpoint Engine group
 
 actor rank 0 ─┐                            CE rank 0
@@ -333,18 +333,18 @@ actor rank A ─┘                                  │ NCCL broadcast
                                                                │ same-GPU IPC
                                                                ▼
                                                       inference worker process
-~~~
+```
 
 ### 1. Checkpoint Engine 组的 world size 不是 actor + rollout
 
 [`build_topology`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/checkpoint_engine/nccl_checkpoint_engine.py#L161-L173) 创建的 CE 拓扑是：
 
-~~~text
+```text
 CE rank 0       = actor global rank 0
 CE rank 1...R   = R 个 rollout CheckpointEngineWorker
 CE world size   = R + 1
 其他 actor rank = -1，不加入 CE group
-~~~
+```
 
 其他 actor rank 不发送远端数据，但必须参加训练侧的 FSDP/Megatron 导出 collective。这样既避免多个 actor sender 重复广播，又保持训练分片能够正确重建。
 
@@ -359,10 +359,10 @@ CE world size   = R + 1
 
 ZMQ PUB/SUB 发送这些 metadata；NCCL broadcast 发送 GPU 上的 `uint8` byte buffer。二者缺一不可：
 
-~~~text
+```text
 ZMQ metadata：这段 byte 对应谁、怎么还原
 NCCL payload：真正的参数字节
-~~~
+```
 
 当前实现只广播 bucket 中实际使用的 slice，而不是把最后一桶未使用的尾部也发出去，见 [commit #7107](https://github.com/verl-project/verl/commit/1ddf0713eeddd8b1c4ec862292a970037c5b2096)。
 
@@ -370,9 +370,9 @@ NCCL payload：真正的参数字节
 
 NCCL Checkpoint Engine 准备两个固定大小 buffer：
 
-~~~text
+```text
 send_buf / recv_buf
-~~~
+```
 
 发送端和接收端在两者之间交换角色，使“消费上一桶”和“接收下一桶”能够交替进行。它可以形成有限流水，但不应理解成所有 materialize、NCCL 和安装阶段都能完全重叠。
 
@@ -386,7 +386,7 @@ send_buf / recv_buf
 
 分离式 [`CheckpointEngineManager.update_weights`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/checkpoint_engine/base.py#L486-L538) 执行：
 
-~~~text
+```text
 1. abort 并保存未完成的 partial rollout
 2. 创建临时 rollout worker group
 3. release KV cache，保留模型权重存储
@@ -395,7 +395,7 @@ send_buf / recv_buf
 6. finalize 本轮 buffer/通信资源
 7. resume KV cache
 8. 恢复未完成请求
-~~~
+```
 
 ### 1. 为什么权重切换前要让请求静止
 
@@ -403,16 +403,16 @@ send_buf / recv_buf
 
 假设 rollout 当前使用旧权重 $W_k$，trainer 刚产生新权重 $W_{k+1}$。权重更新到一半时，模型内部会短暂处于这种状态：
 
-~~~text
+```text
 已经更新的层：W_(k+1)
 还没更新的层：W_k
-~~~
+```
 
 如果这时仍让某个请求继续生成，它的一次 forward 就可能同时用到新旧两版权重。得到的不是 $W_k$ 模型或 $W_{k+1}$ 模型的输出，而是一个临时的“拼接模型”的输出。
 
 为了避免这件事，管理器会先把未完成的请求停下来并保存，等全部新权重安装完成后再恢复：
 
-~~~text
+```text
 请求使用 W_k 生成
         ↓
 暂停并保存未完成请求
@@ -420,7 +420,7 @@ send_buf / recv_buf
 逐批安装 W_(k+1)
         ↓
 新权重全部就位后，恢复请求
-~~~
+```
 
 这样可以保证，正常成功路径上运行的每次 forward，看到的要么是完整的 $W_k$，要么是完整的 $W_{k+1}$。
 
@@ -443,7 +443,7 @@ KV、prefix、multimodal 或 encoder cache 都隐含依赖产生它们的权重�
 
 Checkpoint Engine receiver 得到 full named tensor 后，并没有直接成为 vLLM/SGLang 的 model runner。rollout CheckpointEngineWorker 与真正的 inference worker 通常是同 GPU、不同进程：
 
-~~~text
+```text
 actor rank 0
    │
    │ NCCL across nodes
@@ -455,7 +455,7 @@ rollout CheckpointEngineWorker
 vLLM or SGLang inference worker
    │
    └─ model.load_weights() → local TP/EP shard
-~~~
+```
 
 这带来两个重要结论：
 
@@ -470,7 +470,7 @@ vLLM 入口是 [`ServerAdapter.update_weights`](https://github.com/verl-project/
 
 ### 1. 发送与接收
 
-~~~text
+```text
 ServerAdapter
   ├─ collective_rpc("update_weights_from_ipc")
   │    └─ 让 vLLM workers 进入接收状态
@@ -480,7 +480,7 @@ ServerAdapter
        ├─ ZMQ 发送 handle/shape/dtype/offset
        ├─ vLLM worker 映射 CUDA IPC buffer
        └─ ACK 后 sender 才复用 bucket
-~~~
+```
 
 代码位于：
 
@@ -501,9 +501,9 @@ ZMQ 传的是控制信息，tensor 字节通常留在 GPU，通过 CUDA IPC hand
 
 vLLM worker 侧 [`update_weights_from_ipc`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/vllm_rollout/utils.py#L232-L337) 最终对普通参数调用：
 
-~~~python
+```python
 model.load_weights(param_updates)
-~~~
+```
 
 推理模型 loader 根据当前 vLLM 的 TP/EP 布局选择本 rank 需要的 slice，并处理 fused parameter。FP8/QAT、ModelOpt、MTP drafter、buffer 和 LoRA 还有专门分支。
 
@@ -515,7 +515,7 @@ model.load_weights(param_updates)
 
 SGLang 入口见 [`ServerAdapter.update_weights`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/sglang_rollout/sglang_rollout.py#L291-L369)。
 
-~~~text
+```text
 每个本地 actor/CE rank 的 named tensors
        │
        ├─ get_named_tensor_buckets()
@@ -525,7 +525,7 @@ SGLang 入口见 [`ServerAdapter.update_weights`](https://github.com/verl-projec
        ├─ TP leader 发 UpdateWeights 请求
        ├─ 各 SGLang TP worker 反序列化对应 GPU tensor
        └─ 全部 bucket 完成后 flush_cache()
-~~~
+```
 
 实际更新函数来自 [SGLang 官方 `weight_sync.utils.update_weights`](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/weight_sync/utils.py)。
 
@@ -537,11 +537,11 @@ SGLang 入口见 [`ServerAdapter.update_weights`](https://github.com/verl-projec
 
 veRL 的 [`get_named_tensor_buckets`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/sglang_rollout/utils.py#L90-L143) 只在 tensor 边界分桶：
 
-~~~text
+```text
 若当前 bucket + tensor > B：
   先 flush 旧 bucket
   新 bucket 从完整 tensor 开始
-~~~
+```
 
 若一个 tensor 自身大于 B，这个 bucket 也会大于 B。它与 CE 的 tensor chunk 机制不同。
 
@@ -595,11 +595,11 @@ $$
 
 ### 3. 太小与太大的权衡
 
-| bucket 选择 | 好处 | 代价 |
-|---|---|---|
-| 较小 | staging 峰值低，更早开始消费 | collective、ZMQ metadata、IPC ACK 次数增加 |
-| 较大 | 大包带宽利用率更好，launch 更少 | 双缓冲和第二跳峰值高，首桶等待时间更长 |
-| 大于最大 tensor | 对 shared-memory fallback 更稳妥 | 在大 MoE tensor 上可能完全不可接受 |
+| bucket 选择     | 好处                             | 代价                                       |
+| --------------- | -------------------------------- | ------------------------------------------ |
+| 较小            | staging 峰值低，更早开始消费     | collective、ZMQ metadata、IPC ACK 次数增加 |
+| 较大            | 大包带宽利用率更好，launch 更少  | 双缓冲和第二跳峰值高，首桶等待时间更长     |
+| 大于最大 tensor | 对 shared-memory fallback 更稳妥 | 在大 MoE tensor 上可能完全不可接受         |
 
 默认 2048 MB 只能当起点，不是通用最优值。
 
@@ -625,12 +625,12 @@ $$
 
 可以把四者放在不同坐标轴上：
 
-~~~text
+```text
 训练布局：FSDP / Megatron / VeOmni
 驻留策略：GPU resident / CPU offload / rollout sleep
 传输协议：naive IPC / NCCL CE / 其他 CE
 更新语义：full named tensors / delta flushes
-~~~
+```
 
 只看其中一个配置，无法推断整条同步链路。
 
@@ -686,14 +686,14 @@ veRL 通过以下约束保证正常路径：
 
 参数按 bucket 写入 live model。若第 20 桶加载后第 21 桶失败，当前机制没有另一份完整旧模型可供原子回滚。因此故障处理应遵循：
 
-~~~text
+```text
 本轮 sync 失败
   → 不要恢复 generation
   → 保持 replica 隔离
   → 重建通信/进程状态
   → 从头重放一次完整同步
   → 校验后再恢复服务
-~~~
+```
 
 “请求在同步时被暂停”只保证成功路径不会观察半更新模型，不等于底层具备数据库事务。
 
@@ -715,8 +715,8 @@ CUDA IPC 共享的是 storage，不是自动生成的不可变副本。发送端
 
 官方 [`verl/checkpoint_engine/README.md`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/checkpoint_engine/README.md#L42-L60) 报告了如下 NCCL 样例：
 
-| 模型与拓扑                                                                                   |   后端 |    时间 |        带宽 |
-| --------------------------------------------------------------------------------------- | ---: | ----: | --------: |
+| 模型与拓扑                                                                                   | 后端 |   时间 |      带宽 |
+| -------------------------------------------------------------------------------------------- | ---: | -----: | --------: |
 | Qwen3-30B-A3B-Base；4×8 H100；CX-7 400 Gbps；actor FSDP world size 2；30 个 rollout receiver | NCCL | 约 7 s | 8.25 GB/s |
 
 README 明确注明 rollout 侧“只接收权重，不包含到 vLLM/SGLang 的 CUDA IPC”。因此它主要度量 Checkpoint Engine 广播，不包含：
@@ -730,14 +730,14 @@ README 明确注明 rollout 侧“只接收权重，不包含到 vLLM/SGLang 的
 
 建议至少拆出：
 
-| 阶段 | 建议观测 |
-|---|---|
-| export | state dict 获取、key conversion、每参数 full_tensor 时间 |
-| CE transport | 总 bytes、bucket 数、NCCL receive GB/s |
-| local handoff | IPC/shared-memory bucket 数、ACK 等待 |
-| install | load_weights 与 postprocess 时间 |
-| control | abort/drain、cache flush、resume 时间 |
-| memory | actor、CE worker、inference worker 各自 peak allocated/reserved |
+| 阶段          | 建议观测                                                        |
+| ------------- | --------------------------------------------------------------- |
+| export        | state dict 获取、key conversion、每参数 full_tensor 时间        |
+| CE transport  | 总 bytes、bucket 数、NCCL receive GB/s                          |
+| local handoff | IPC/shared-memory bucket 数、ACK 等待                           |
+| install       | load_weights 与 postprocess 时间                                |
+| control       | abort/drain、cache flush、resume 时间                           |
+| memory        | actor、CE worker、inference worker 各自 peak allocated/reserved |
 
 当前 NCCL Engine 会记录 send/receive time 和 receiver 侧 GB/s，但 full backend 返回的 per-sync metrics 仍很有限。生产环境通常需要在外层补充 profiling。
 
@@ -747,13 +747,13 @@ README 明确注明 rollout 侧“只接收权重，不包含到 vLLM/SGLang 的
 
 ### 1. 先确认部署路径
 
-~~~text
+```text
 actor 与 rollout colocated？
   ├─ 是：优先看 naive + ServerAdapter IPC
   └─ 否：继续看 Checkpoint Engine
           ├─ NCCL/HCCL/NIXL 等第一跳
           └─ CE → inference process 第二跳
-~~~
+```
 
 如果路径判断错了，调 NCCL bucket 可能对默认 naive 作业完全没有作用。
 
@@ -796,18 +796,18 @@ actor 与 rollout colocated？
 
 ## 十八、排障地图
 
-| 现象 | 优先检查 |
-|---|---|
-| 卡在第一个 `full_tensor()` | 是否有 actor rank 未消费 generator，或参数遍历顺序不一致 |
-| exporter 很慢但 NCCL 很快 | 逐参数 all-gather、CPU offload staging、格式转换 |
-| ZMQ metadata 到了但 NCCL 卡住 | CE rank/world size、group 名称、网络/NCCL 配置 |
-| CE 显示完成但 rollout 输出仍旧 | 第二跳 IPC、loader 是否完成、cache 是否清理、global step 是否更新 |
-| 权重偶发损坏 | buffer 是否在 receiver 完成前复用、view 是否指向下一轮会覆盖的 storage |
-| 调小 bucket 仍 OOM | 最大单 tensor、CE merge、SGLang 不切 tensor、第二跳 buffer |
-| vLLM shared-memory 路径断言 | 单 tensor 大于 bucket；该 fallback 不支持 direct large-tensor IPC |
-| 只有 partial rollout 出错 | abort/drain/resume 时序与 cache 生命周期 |
-| LoRA 同步后效果像 base model | merge context 生命周期、`merge` 配置、peft metadata 是否到达远端 |
-| 换 replica 数后 hang | 旧通信组是否被错误复用，`rebuild_group` 是否匹配拓扑 |
+| 现象                           | 优先检查                                                               |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| 卡在第一个 `full_tensor()`     | 是否有 actor rank 未消费 generator，或参数遍历顺序不一致               |
+| exporter 很慢但 NCCL 很快      | 逐参数 all-gather、CPU offload staging、格式转换                       |
+| ZMQ metadata 到了但 NCCL 卡住  | CE rank/world size、group 名称、网络/NCCL 配置                         |
+| CE 显示完成但 rollout 输出仍旧 | 第二跳 IPC、loader 是否完成、cache 是否清理、global step 是否更新      |
+| 权重偶发损坏                   | buffer 是否在 receiver 完成前复用、view 是否指向下一轮会覆盖的 storage |
+| 调小 bucket 仍 OOM             | 最大单 tensor、CE merge、SGLang 不切 tensor、第二跳 buffer             |
+| vLLM shared-memory 路径断言    | 单 tensor 大于 bucket；该 fallback 不支持 direct large-tensor IPC      |
+| 只有 partial rollout 出错      | abort/drain/resume 时序与 cache 生命周期                               |
+| LoRA 同步后效果像 base model   | merge context 生命周期、`merge` 配置、peft metadata 是否到达远端       |
+| 换 replica 数后 hang           | 旧通信组是否被错误复用，`rebuild_group` 是否匹配拓扑                   |
 
 官方 GPU 正确性测试会反复同步并校验权重，也覆盖复用/重建 group 的组合，可参考 [`test_correctness_on_gpu.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/tests/checkpoint_engine/test_correctness_on_gpu.py#L33-L81)。
 
@@ -825,12 +825,12 @@ actor 与 rollout colocated？
 
 很多旧文章会从：
 
-~~~text
+```text
 FSDPVLLMShardingManager.__enter__()
   → state_dict
   → full_tensor
   → model_runner.model.load_weights
-~~~
+```
 
 解释 veRL 权重同步。这对 v0.5 时代是成立的，但当前主线已经迁移。
 
@@ -841,13 +841,13 @@ FSDPVLLMShardingManager.__enter__()
 
 旧实现仍适合用来理解“FSDP full tensor → inference load”的思想来源，但排查当前代码时应从：
 
-~~~text
+```text
 CheckpointEngineManager
   → ActorRolloutRefWorker
   → ModelEngine
   → CheckpointEngine
   → ServerAdapter
-~~~
+```
 
 开始。
 
@@ -855,14 +855,14 @@ CheckpointEngineManager
 
 ## 二十、全量与增量方案的边界
 
-| 维度 | 全量 named-tensor sync | `delta_sharded` |
-|---|---|---|
-| 每轮覆盖 | 所有逻辑参数 | 变化位置的 replacement patch |
+| 维度       | 全量 named-tensor sync               | `delta_sharded`                         |
+| ---------- | ------------------------------------ | --------------------------------------- |
+| 每轮覆盖   | 所有逻辑参数                         | 变化位置的 replacement patch            |
 | 训练侧重建 | 通常需要逐 tensor full gather/fusion | 稳态目标是从 local shard 直接导出 patch |
-| wire bytes | 约为完整模型实际 dtype 字节数 | 与 changed-element ratio 和索引开销有关 |
-| 接收端 | 标准 vLLM/SGLang full-weight loader | 需要支持稀疏原地 apply 的专用路径 |
-| 复杂度 | 语义直接、兼容面更广 | snapshot、布局映射、flush、校验更复杂 |
-| 适用场景 | 首次 seed、变化密集、兼容性优先 | 相邻版本变化稀疏且同步成为瓶颈 |
+| wire bytes | 约为完整模型实际 dtype 字节数        | 与 changed-element ratio 和索引开销有关 |
+| 接收端     | 标准 vLLM/SGLang full-weight loader  | 需要支持稀疏原地 apply 的专用路径       |
+| 复杂度     | 语义直接、兼容面更广                 | snapshot、布局映射、flush、校验更复杂   |
+| 适用场景   | 首次 seed、变化密集、兼容性优先      | 相邻版本变化稀疏且同步成为瓶颈          |
 
 增量同步并不会让全量路径消失：
 
@@ -873,10 +873,10 @@ CheckpointEngineManager
 
 因此更合理的理解是：
 
-~~~text
+```text
 full sync  = 正确性基线 + 通用恢复路径
 delta sync = 满足条件时的稳态优化
-~~~
+```
 
 ---
 
@@ -901,22 +901,22 @@ veRL 当前全量权重同步可以压缩成四句话：
 
 ## 代码索引
 
-| 主题 | 当前源码 |
-|---|---|
-| 同步 trainer 触发点 | [`trainer_sync.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/trainer/ppo/v1/trainer_sync.py#L31-L42) |
-| Checkpoint Engine 配置 | [`rollout.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/config/rollout.py#L124-L141) |
-| CheckpointEngineManager | [`checkpoint_engine/base.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/checkpoint_engine/base.py#L447-L538) |
-| worker 权重更新 | [`engine_workers.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/engine_workers.py#L719-L805) |
-| FSDP full exporter | [`fsdp/transformer_impl.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/engine/fsdp/transformer_impl.py#L949-L1064) |
-| Megatron full exporter | [`megatron/transformer_impl.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/engine/megatron/transformer_impl.py#L1007-L1045) |
-| NCCL Checkpoint Engine | [`nccl_checkpoint_engine.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/checkpoint_engine/nccl_checkpoint_engine.py#L104-L381) |
-| tensor chunk/merge | [`checkpoint_engine/base.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/checkpoint_engine/base.py#L541-L609) |
-| vLLM ServerAdapter | [`vllm_rollout.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/vllm_rollout/vllm_rollout.py#L208-L246) |
-| vLLM bucketed IPC | [`bucketed_weight_transfer.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/vllm_rollout/bucketed_weight_transfer.py#L103-L302) |
-| vLLM loader 扩展 | [`vllm_rollout/utils.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/vllm_rollout/utils.py#L232-L398) |
-| SGLang ServerAdapter | [`sglang_rollout.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/sglang_rollout/sglang_rollout.py#L291-L369) |
-| SGLang bucket helper | [`sglang_rollout/utils.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/sglang_rollout/utils.py#L90-L143) |
-| GPU 正确性测试 | [`test_correctness_on_gpu.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/tests/checkpoint_engine/test_correctness_on_gpu.py#L33-L81) |
+| 主题                    | 当前源码                                                                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 同步 trainer 触发点     | [`trainer_sync.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/trainer/ppo/v1/trainer_sync.py#L31-L42)                                         |
+| Checkpoint Engine 配置  | [`rollout.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/config/rollout.py#L124-L141)                                                 |
+| CheckpointEngineManager | [`checkpoint_engine/base.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/checkpoint_engine/base.py#L447-L538)                                  |
+| worker 权重更新         | [`engine_workers.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/engine_workers.py#L719-L805)                                          |
+| FSDP full exporter      | [`fsdp/transformer_impl.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/engine/fsdp/transformer_impl.py#L949-L1064)                    |
+| Megatron full exporter  | [`megatron/transformer_impl.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/engine/megatron/transformer_impl.py#L1007-L1045)           |
+| NCCL Checkpoint Engine  | [`nccl_checkpoint_engine.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/checkpoint_engine/nccl_checkpoint_engine.py#L104-L381)                |
+| tensor chunk/merge      | [`checkpoint_engine/base.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/checkpoint_engine/base.py#L541-L609)                                  |
+| vLLM ServerAdapter      | [`vllm_rollout.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/vllm_rollout/vllm_rollout.py#L208-L246)                         |
+| vLLM bucketed IPC       | [`bucketed_weight_transfer.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/vllm_rollout/bucketed_weight_transfer.py#L103-L302) |
+| vLLM loader 扩展        | [`vllm_rollout/utils.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/vllm_rollout/utils.py#L232-L398)                          |
+| SGLang ServerAdapter    | [`sglang_rollout.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/sglang_rollout/sglang_rollout.py#L291-L369)                   |
+| SGLang bucket helper    | [`sglang_rollout/utils.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/verl/workers/rollout/sglang_rollout/utils.py#L90-L143)                       |
+| GPU 正确性测试          | [`test_correctness_on_gpu.py`](https://github.com/verl-project/verl/blob/535c47799b537a0e3602b9839344ee53d2a47128/tests/checkpoint_engine/test_correctness_on_gpu.py#L33-L81)               |
 
 ## 参考资料
 

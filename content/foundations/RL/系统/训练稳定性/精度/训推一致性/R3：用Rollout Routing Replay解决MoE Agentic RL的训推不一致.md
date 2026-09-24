@@ -105,12 +105,12 @@ $$
 
 假设某层共有 **4 个专家，每个 token 选 2 个**，即 $M=4,K=2$。对于当前 token，router 算出下面这组分数。这是用于解释机制的假想数值：
 
-| 专家 | router 分数 $s_i$ | 分数排名 | 是否进入 Top-2 |
-| --- | ---: | ---: | --- |
-| $\mathcal{E}_1$ | 2.000 | 1 | 是 |
-| $\mathcal{E}_2$ | 1.500 | 2 | 是 |
-| $\mathcal{E}_3$ | 1.499 | 3 | 否 |
-| $\mathcal{E}_4$ | -1.000 | 4 | 否 |
+| 专家            | router 分数 $s_i$ | 分数排名 | 是否进入 Top-2 |
+| --------------- | ----------------: | -------: | -------------- |
+| $\mathcal{E}_1$ |             2.000 |        1 | 是             |
+| $\mathcal{E}_2$ |             1.500 |        2 | 是             |
+| $\mathcal{E}_3$ |             1.499 |        3 | 否             |
+| $\mathcal{E}_4$ |            -1.000 |        4 | 否             |
 
 #### Top-K 决定哪些专家参与计算
 
@@ -177,12 +177,12 @@ flowchart LR
 
 现在回到训推不一致。假设 rollout 侧得到上表中的分数，而训练侧因为数值误差，得到的分数略有变化：
 
-| 专家 | rollout 分数 | trainer 分数 | 选择变化 |
-| --- | ---: | ---: | --- |
-| $\mathcal{E}_1$ | 2.000 | 2.000 | 两侧都选中 |
-| $\mathcal{E}_2$ | 1.500 | 1.498 | 从选中变为未选中 |
-| $\mathcal{E}_3$ | 1.499 | 1.501 | 从未选中变为选中 |
-| $\mathcal{E}_4$ | -1.000 | -1.000 | 两侧都未选中 |
+| 专家            | rollout 分数 | trainer 分数 | 选择变化         |
+| --------------- | -----------: | -----------: | ---------------- |
+| $\mathcal{E}_1$ |        2.000 |        2.000 | 两侧都选中       |
+| $\mathcal{E}_2$ |        1.500 |        1.498 | 从选中变为未选中 |
+| $\mathcal{E}_3$ |        1.499 |        1.501 | 从未选中变为选中 |
+| $\mathcal{E}_4$ |       -1.000 |       -1.000 | 两侧都未选中     |
 
 专家 2 和专家 3 的分数各只变了 0.002，但排名交换了，Top-2 集合便从 `{1, 2}` 变成 `{1, 3}`，mask 也从 `[1, 1, 0, 0]` 变成 `[1, 0, 1, 0]`。这个“选中 / 未选中”的切换就是离散跳变。
 
@@ -317,10 +317,10 @@ flowchart LR
 
 二者的边界很明确：
 
-| 方法 | 路由从哪里记录 | 在哪里重放 | 能解决的问题 |
-| --- | --- | --- | --- |
-| R2 | trainer 的 Recompute | Update | mini-step/参数更新后路由改变 |
-| R3 | rollout 推理引擎 | Recompute 与 Update | 上述问题，以及 rollout/trainer 跨引擎路由差异 |
+| 方法 | 路由从哪里记录       | 在哪里重放          | 能解决的问题                                  |
+| ---- | -------------------- | ------------------- | --------------------------------------------- |
+| R2   | trainer 的 Recompute | Update              | mini-step/参数更新后路由改变                  |
+| R3   | rollout 推理引擎     | Recompute 与 Update | 上述问题，以及 rollout/trainer 跨引擎路由差异 |
 
 当 `mini_step=1` 时，Recompute 和 Update 的权重几乎没有阶段性差异，R2 的作用会明显减弱；但 rollout 与 trainer 仍是两个执行栈，因此 R3 依然有意义。
 
@@ -405,11 +405,11 @@ Prefix 就是输入序列从开头开始的一段前缀。Agent 调用工具后�
 
 假设前 1000 个位置的 KV 全部命中缓存，那么这一轮的处理方式是：
 
-| 输入部分 | 没有可复用的 KV 时 | 命中历史前缀 KV 时 |
-| --- | --- | --- |
-| 历史 $H$：1000 个 token | 重新前向，计算 KV 和路由 | 直接复用 KV，跳过这些位置的前向 |
+| 输入部分                         | 没有可复用的 KV 时       | 命中历史前缀 KV 时                             |
+| -------------------------------- | ------------------------ | ---------------------------------------------- |
+| 历史 $H$：1000 个 token          | 重新前向，计算 KV 和路由 | 直接复用 KV，跳过这些位置的前向                |
 | 新 observation $O$：100 个 token | 执行前向，计算 KV 和路由 | 仍需执行前向，计算 KV 和路由，并读取 $H$ 的 KV |
-| 后续 decode 输入位置 | 随生成逐步计算 | 同样随生成逐步计算 |
+| 后续 decode 输入位置             | 随生成逐步计算           | 同样随生成逐步计算                             |
 
 实际引擎常按 block 管理缓存，所以可复用长度取决于实际命中的位置。命中也要求 token IDs、位置和 attention 语义、模型及 adapter 版本等条件兼容，不能只比较可读文本是否相同。[vLLM 的 prefix caching 设计](https://docs.vllm.ai/en/latest/design/prefix_caching/)介绍了这种按前缀复用缓存块的方式。
 
@@ -440,12 +440,12 @@ R3 的做法是：**第一次真正计算 $H$ 时，除了保存它的 KV，也�
 
 因此，在工程上应区分两种用途。下面是对路由数据管理的要求，不代表 R3 论文规定了某一种固定的内存布局：
 
-| 记录                                        | 给谁使用                         | 按什么找到数据                    | 需要保留多久                      |
-| ----------------------------------------- | ---------------------------- | -------------------------- | --------------------------- |
-| **KV-slot route cache**：与 KV 槽位对应的路由缓存    | rollout 引擎，在 prefix 命中时取回旧路由 | KV 槽位对应的 token 位置，以及 MoE 层 | 只要对应 prefix 还可被复用，就应可取回它的路由 |
-| **Durable trajectory trace**：随训练轨迹保留的路由记录 | trainer，重放这条样本               | 轨迹 ID、token 位置和 MoE 层      | 保留到这条轨迹不再需要被训练消费            |
+| 记录                                                   | 给谁使用                                 | 按什么找到数据                        | 需要保留多久                                   |
+| ------------------------------------------------------ | ---------------------------------------- | ------------------------------------- | ---------------------------------------------- |
+| **KV-slot route cache**：与 KV 槽位对应的路由缓存      | rollout 引擎，在 prefix 命中时取回旧路由 | KV 槽位对应的 token 位置，以及 MoE 层 | 只要对应 prefix 还可被复用，就应可取回它的路由 |
+| **Durable trajectory trace**：随训练轨迹保留的路由记录 | trainer，重放这条样本                    | 轨迹 ID、token 位置和 MoE 层          | 保留到这条轨迹不再需要被训练消费               |
 
-这里的 *durable* 指记录能跨过推理缓存的回收，保留到训练所需的时间；它可以放在内存 buffer 中，不要求一定写入磁盘。这两种用途也不要求把整份路由复制两遍，可以共享不可变的路由数据，但必须保证仍被引用的内容不会遭到覆盖。
+这里的 _durable_ 指记录能跨过推理缓存的回收，保留到训练所需的时间；它可以放在内存 buffer 中，不要求一定写入磁盘。这两种用途也不要求把整份路由复制两遍，可以共享不可变的路由数据，但必须保证仍被引用的内容不会遭到覆盖。
 
 例如，请求 A 的一个历史 token 曾占用 KV 槽位 42。如果轨迹里只记下“以后去槽位 42 取路由”，而该槽位随后被分配给请求 B，trainer 就可能读到 B 的专家 ID。数组长度和专家编号都可能合法，实际重放的却是另一条样本的路径。
 
@@ -694,21 +694,21 @@ $$
 
 ### 7.1 训推差异
 
-| 模型/方法 | 估计 train–inference KL |
-| --- | ---: |
-| Qwen3-30B-A3B，未使用 R3 | $1.535\times10^{-3}$ |
-| Qwen3-30B-A3B + R3 | $7.5\times10^{-4}$ |
-| Qwen3-8B Dense 对照 | $6.4\times10^{-4}$ |
+| 模型/方法                | 估计 train–inference KL |
+| ------------------------ | ----------------------: |
+| Qwen3-30B-A3B，未使用 R3 |    $1.535\times10^{-3}$ |
+| Qwen3-30B-A3B + R3       |      $7.5\times10^{-4}$ |
+| Qwen3-8B Dense 对照      |      $6.4\times10^{-4}$ |
 
 R3 把 MoE 的 KL 大约减半，降到接近 Dense baseline 的水平；概率差异很大的 token 频率约降低一个数量级。论文报告其 rollout 侧总体延迟开销低于 3%，但这是特定实现、硬件和 workload 下的结果。
 
 后续公开投稿版本又补充了跨模型的**一致性诊断**，覆盖不同专家数、softmax/sigmoid router 以及是否带 shared expert 的 MoE：
 
-| 模型 | $F(2)$：原生 / R3 | 估计 KL：原生 / R3 |
-| --- | ---: | ---: |
-| Qwen3-30B-A3B | $2.54\times10^{-4}$ / $5.83\times10^{-6}$ | $1.37\times10^{-3}$ / $7.03\times10^{-4}$ |
-| DeepSeek-V2-Lite-SFT | $2.25\times10^{-3}$ / $2.16\times10^{-4}$ | $4.06\times10^{-3}$ / $1.17\times10^{-3}$ |
-| Mixtral-8x7B-SFT | $9.77\times10^{-5}$ / $1.08\times10^{-6}$ | $1.03\times10^{-3}$ / $4.98\times10^{-4}$ |
+| 模型                       |                         $F(2)$：原生 / R3 |                        估计 KL：原生 / R3 |
+| -------------------------- | ----------------------------------------: | ----------------------------------------: |
+| Qwen3-30B-A3B              | $2.54\times10^{-4}$ / $5.83\times10^{-6}$ | $1.37\times10^{-3}$ / $7.03\times10^{-4}$ |
+| DeepSeek-V2-Lite-SFT       | $2.25\times10^{-3}$ / $2.16\times10^{-4}$ | $4.06\times10^{-3}$ / $1.17\times10^{-3}$ |
+| Mixtral-8x7B-SFT           | $9.77\times10^{-5}$ / $1.08\times10^{-6}$ | $1.03\times10^{-3}$ / $4.98\times10^{-4}$ |
 | Moonlight-16B-A3B-Instruct | $1.73\times10^{-5}$ / $6.94\times10^{-7}$ | $3.67\times10^{-4}$ / $1.92\times10^{-4}$ |
 
 这些结果支持“R3 对不同 MoE router 形态都能减少 chosen-token 概率 mismatch”，但该表没有直接报告 route mismatch rate，也不是四个模型上的完整 RL 收益或稳定性对照，不能据此声称 R3 在所有模型上都提高 reward。Qwen3 的数值与前一张 arXiv v2 主文表略有不同，来自后续投稿版本的另一组附录评测，并非抄写误差。[公开投稿版本附录](https://openreview.net/pdf?id=6LORvHYkV3)
@@ -717,18 +717,18 @@ R3 把 MoE 的 KL 大约减半，降到接近 Dense baseline 的水平；概率�
 
 论文在 AIME24、AIME25、AMC23 和 MATH500 Level 5 上取平均，并报告训练过程中观测到的最佳分数：
 
-| 模型与设置              | 方法         |   四项平均最佳分 | 论文观测到的 collapse step |
-| ------------------ | ---------- | --------: | -------------------: |
-| SFT，`mini_step=8`  | GRPO       |     48.84 |                  120 |
-| SFT，`mini_step=8`  | GSPO       |     66.76 |      未在 180 step 内崩溃 |
-| SFT，`mini_step=8`  | GRPO + R3  |     68.05 |      未在 180 step 内崩溃 |
-| SFT，`mini_step=8`  | GSPO + R3  |     69.00 |      未在 180 step 内崩溃 |
-| SFT，`mini_step=1`  | GRPO       |     62.23 |                   60 |
-| SFT，`mini_step=1`  | GRPO + TIS |     66.24 |                  105 |
-| SFT，`mini_step=1`  | GRPO + R3  | **71.83** |      未在 180 step 内崩溃 |
-| Base，`mini_step=1` | GRPO       |     61.69 |                  105 |
-| Base，`mini_step=1` | GRPO + TIS |     69.22 |      未在 180 step 内崩溃 |
-| Base，`mini_step=1` | GRPO + R3  | **70.73** |      未在 180 step 内崩溃 |
+| 模型与设置          | 方法       | 四项平均最佳分 | 论文观测到的 collapse step |
+| ------------------- | ---------- | -------------: | -------------------------: |
+| SFT，`mini_step=8`  | GRPO       |          48.84 |                        120 |
+| SFT，`mini_step=8`  | GSPO       |          66.76 |       未在 180 step 内崩溃 |
+| SFT，`mini_step=8`  | GRPO + R3  |          68.05 |       未在 180 step 内崩溃 |
+| SFT，`mini_step=8`  | GSPO + R3  |          69.00 |       未在 180 step 内崩溃 |
+| SFT，`mini_step=1`  | GRPO       |          62.23 |                         60 |
+| SFT，`mini_step=1`  | GRPO + TIS |          66.24 |                        105 |
+| SFT，`mini_step=1`  | GRPO + R3  |      **71.83** |       未在 180 step 内崩溃 |
+| Base，`mini_step=1` | GRPO       |          61.69 |                        105 |
+| Base，`mini_step=1` | GRPO + TIS |          69.22 |       未在 180 step 内崩溃 |
+| Base，`mini_step=1` | GRPO + R3  |      **70.73** |       未在 180 step 内崩溃 |
 
 几个值得注意的现象：
 
@@ -744,10 +744,10 @@ R3 把 MoE 的 KL 大约减半，降到接近 Dense baseline 的水平；概率�
 
 论文进一步使用 Qwen3-30B-A3B 做软件工程多轮 RL：训练集为 R2E-Gym-Lite，评测为 SWE-bench Verified，最大序列长度 65,536，最多 50 个交互 step。
 
-| 方法 | SWE-bench Verified Pass@1 | 最佳 step | collapse step |
-| --- | ---: | ---: | ---: |
-| GRPO | 31.8 | 70 | 约 90 |
-| GRPO + R3 | **38.6** | 160 | 未在 180 step 内崩溃 |
+| 方法      | SWE-bench Verified Pass@1 | 最佳 step |        collapse step |
+| --------- | ------------------------: | --------: | -------------------: |
+| GRPO      |                      31.8 |        70 |                约 90 |
+| GRPO + R3 |                  **38.6** |       160 | 未在 180 step 内崩溃 |
 
 R3 提升 6.8 个百分点，并让训练继续到实验结束。这个实验很重要，因为它覆盖了长上下文、多轮工具交互，并展示了 route-prefix caching 的可行性，而不只是单轮数学题。
 
@@ -755,17 +755,17 @@ R3 提升 6.8 个百分点，并让训练继续到实验结束。这个实验很
 
 训推一致性不是一个单点问题。把不同技术放到同一张表里，更容易看清各自边界：
 
-| 方法                          | 作用层           | 主要修复什么                                             | R3 不能替代它的原因                          |
-| --------------------------- | ------------- | -------------------------------------------------- | ------------------------------------ |
-| R3                          | MoE 离散计算路径    | rollout/trainer 的 Top-K expert set 不同              | R3 本身就是这一层的方案                        |
-| R2                          | trainer 内部路由  | Recompute 到 Update 的 route drift                   | 看不到 rollout 引擎真实走过的 route            |
-| Batch-invariant / 统一 kernel | 数值执行          | batch、kernel、精度导致的广泛数值差异                           | R3 只固定专家集合，其他算子仍可能不同                 |
-| TIS / correction IS         | Loss          | 对剩余训推 ratio 做截断或校正                                 | 属于事后修正，R3 属于根因修复，可按需组合               |
-| Sequence rejection          | 数据选择          | 丢弃累计 mismatch 过大的轨迹                                | 会牺牲数据，且不修复路由源头                       |
-| GSPO                        | 优化目标          | 降低 token-level ratio 噪声，改为 sequence-level clipping | 算法稳定性与执行路径一致性是两个维度                   |
-| TITO                        | Token/context | 保证 trainer 使用 rollout 的真实 token 历史                 | token 对不上时，R3 trace 也无法正确对齐          |
-| Staleness control           | 异步调度          | 限制旧 policy 数据、混版本 trajectory                       | R3 不会消除权重版本差                         |
-| Sampling replay/correction  | 行为分布          | 对齐 temperature、top-k/p、penalty、grammar 后的真实分布      | R3 不处理 vocabulary sampling processor |
+| 方法                          | 作用层           | 主要修复什么                                              | R3 不能替代它的原因                       |
+| ----------------------------- | ---------------- | --------------------------------------------------------- | ----------------------------------------- |
+| R3                            | MoE 离散计算路径 | rollout/trainer 的 Top-K expert set 不同                  | R3 本身就是这一层的方案                   |
+| R2                            | trainer 内部路由 | Recompute 到 Update 的 route drift                        | 看不到 rollout 引擎真实走过的 route       |
+| Batch-invariant / 统一 kernel | 数值执行         | batch、kernel、精度导致的广泛数值差异                     | R3 只固定专家集合，其他算子仍可能不同     |
+| TIS / correction IS           | Loss             | 对剩余训推 ratio 做截断或校正                             | 属于事后修正，R3 属于根因修复，可按需组合 |
+| Sequence rejection            | 数据选择         | 丢弃累计 mismatch 过大的轨迹                              | 会牺牲数据，且不修复路由源头              |
+| GSPO                          | 优化目标         | 降低 token-level ratio 噪声，改为 sequence-level clipping | 算法稳定性与执行路径一致性是两个维度      |
+| TITO                          | Token/context    | 保证 trainer 使用 rollout 的真实 token 历史               | token 对不上时，R3 trace 也无法正确对齐   |
+| Staleness control             | 异步调度         | 限制旧 policy 数据、混版本 trajectory                     | R3 不会消除权重版本差                     |
+| Sampling replay/correction    | 行为分布         | 对齐 temperature、top-k/p、penalty、grammar 后的真实分布  | R3 不处理 vocabulary sampling processor   |
 
 最后一项尤其容易遗漏。rollout 真正的行为策略可能经过 temperature、top-k、top-p、min-p、repetition penalty 或 structured decoding。如果 rollout 保存的是处理后、重新归一化的 logprob，而 trainer 比较的是 full-vocabulary raw log-softmax，两者支持集和概率语义本来就不同。R3 对专家路由完全正确，也修不了这个 ratio。
 

@@ -16,13 +16,13 @@
 
 各层职责可以这样理解：
 
-| 层 | 负责什么 | 在哪里 |
-| --- | --- | --- |
-| 上游开源仓库 | Agent 要理解和修改的真实代码 | 91 个 GitHub 仓库 |
-| DeepSWE | Prompt、固定代码版本、环境、隐藏测试、评分合同、参考解 | 本文分析的仓库 |
-| Harbor | Task 的目录与配置协议 | [Harbor task format](https://www.harborframework.com/docs/tasks) |
-| Pier | 读取 task、启动 sandbox、驱动 agent、搬运 artifact、保存 trajectory | 独立 runner |
-| mini-swe-agent | 官方排行榜统一使用的 agent harness | Pier 驱动 |
+| 层             | 负责什么                                                            | 在哪里                                                           |
+| -------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 上游开源仓库   | Agent 要理解和修改的真实代码                                        | 91 个 GitHub 仓库                                                |
+| DeepSWE        | Prompt、固定代码版本、环境、隐藏测试、评分合同、参考解              | 本文分析的仓库                                                   |
+| Harbor         | Task 的目录与配置协议                                               | [Harbor task format](https://www.harborframework.com/docs/tasks) |
+| Pier           | 读取 task、启动 sandbox、驱动 agent、搬运 artifact、保存 trajectory | 独立 runner                                                      |
+| mini-swe-agent | 官方排行榜统一使用的 agent harness                                  | Pier 驱动                                                        |
 
 所以，仓库代码能直接证明的是“一个 task 如何声明和评分”；诸如默认并发数、失败重试、模型 API 路由、外层 job 聚合等属于 Pier。分析 benchmark 时若不区分这两层，很容易把框架能力误写成数据集自身的实现。
 
@@ -30,13 +30,13 @@
 
 当前语料覆盖 91 个活跃开源仓库和 5 种声明语言（按 `manifest.json` 统计）：
 
-| 语言 | Task 数 |
-| --- | ---: |
-| TypeScript | 35 |
-| Python | 34 |
-| Go | 34 |
-| Rust | 5 |
-| JavaScript | 5 |
+| 语言       | Task 数 |
+| ---------- | ------: |
+| TypeScript |      35 |
+| Python     |      34 |
+| Go         |      34 |
+| Rust       |       5 |
+| JavaScript |       5 |
 
 题型分布更能说明 benchmark 的能力画像：106 道是 `feature_request`，只有 4 道 `bugfix` 和 3 道 `enhancement`。也就是说，DeepSWE 主要测的不是在一个小范围内定位单点 bug，而是阅读陌生代码库、发现扩展点、设计 API，并把一个包含多个并行要求的功能完整接入现有系统。
 
@@ -135,17 +135,17 @@ gpus = 0
 
 我遍历了全部 113 份配置，以下策略是 corpus 级统一值：
 
-| 约束 | 值 |
-| --- | ---: |
-| Agent 最大运行时间 | 5400 秒（90 分钟） |
-| Verifier 最大运行时间 | 1800 秒（30 分钟） |
-| Collect hook | 300 秒 |
-| CPU | 2 |
-| 内存 | 8192 MB |
-| 存储 | 20480 MB |
-| GPU | 0 |
-| Agent / verifier task 网络 | no-network |
-| Verifier 模式 | separate |
+| 约束                       |                 值 |
+| -------------------------- | -----------------: |
+| Agent 最大运行时间         | 5400 秒（90 分钟） |
+| Verifier 最大运行时间      | 1800 秒（30 分钟） |
+| Collect hook               |             300 秒 |
+| CPU                        |                  2 |
+| 内存                       |            8192 MB |
+| 存储                       |           20480 MB |
+| GPU                        |                  0 |
+| Agent / verifier task 网络 |         no-network |
+| Verifier 模式              |           separate |
 
 这些是分阶段上限，不应该直接相加成一次 trial 的承诺 wall time。镜像缓存、调度等待、API 延迟和提前失败都会改变实际耗时。
 
@@ -267,12 +267,12 @@ Agent 结束后，collect hook 在 agent 容器中产生 `model.patch`。在这�
 
 失败语义也被明确区分：
 
-| 情况 | 结果 |
-| --- | --- |
-| 没有提交 patch | 评分未应用模型修改的基线状态，按任务构造应为 0 |
-| `model.patch` 无法 apply | `reward=0`，并记录 `apply_failed=1` |
-| 隐藏 `test.patch` 无法 apply | 基础设施错误，由 shell trap 产生 `reward.txt=-1` |
-| verifier 在产生 reward 前崩溃 | 同样以 `-1` sentinel 表示基础设施失败 |
+| 情况                          | 结果                                             |
+| ----------------------------- | ------------------------------------------------ |
+| 没有提交 patch                | 评分未应用模型修改的基线状态，按任务构造应为 0   |
+| `model.patch` 无法 apply      | `reward=0`，并记录 `apply_failed=1`              |
+| 隐藏 `test.patch` 无法 apply  | 基础设施错误，由 shell trap 产生 `reward.txt=-1` |
+| verifier 在产生 reward 前崩溃 | 同样以 `-1` sentinel 表示基础设施失败            |
 
 这里还有一个边缘情况：如果 reporter 静默损坏或没有生成报告，但公共 grader 仍能正常运行，缺失的 node ID 会被当成普通测试失败，得到 0 而不是 -1。因此“模型失败”和“报告器失败”在极端情况下并非完全可分。
 

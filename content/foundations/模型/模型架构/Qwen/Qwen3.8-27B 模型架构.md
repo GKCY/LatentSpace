@@ -12,25 +12,25 @@ Qwen3.8-27B 最容易被误解成一台普通的“27B Transformer”。它其�
 
 ## 1. 一张表看懂 Qwen3.8-27B
 
-| 项目             | 公开配置                                                                         |
-| -------------- | ---------------------------------------------------------------------------- |
-| 模型类型           | 带视觉编码器的 Causal Language Model                                                |
-| 参数形态           | Dense，不是 MoE                                                                 |
-| 语言模型宽度         | 5,120                                                                        |
-| Decoder 层数     | 64                                                                           |
-| 层布局            | `16 × [3 × Gated DeltaNet + 1 × Gated Attention]`                            |
-| Gated DeltaNet | 48 层；16 个 Q/K head、48 个 V head；head dim 128                                  |
-| 全局注意力          | 16 层；24 个 Q head、4 个 KV head；head dim 256                                    |
-| FFN            | 每层都有一个稠密 SwiGLU，intermediate size 17,408                                     |
-| 词表/输出行数        | 248,320，已 padding；输入与输出权重不共享                                                 |
-| 位置编码           | partial multimodal RoPE；仅旋转全局注意力每个 256 维 Q/K head 的前 64 维；DeltaNet 层不使用 RoPE |
-| 原生上下文          | 262,144 token                                                                |
-| 扩展上下文          | 通过 YaRN 可到 1,000,000 token                                                   |
-| 视觉塔            | 27 层 ViT；hidden 1,152；16 heads；FFN 4,304                                     |
-| 视觉 patch       | 时间维 2 帧，空间维 `16 × 16`；随后做 `2 × 2` spatial merge                              |
-| MTP            | 1 层辅助预测模块，经过多步 MTP 训练                                                        |
-| 权重格式           | BF16，另有独立的官方 FP8 版本                                                          |
-| License        | Apache-2.0                                                                   |
+| 项目           | 公开配置                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------ |
+| 模型类型       | 带视觉编码器的 Causal Language Model                                                             |
+| 参数形态       | Dense，不是 MoE                                                                                  |
+| 语言模型宽度   | 5,120                                                                                            |
+| Decoder 层数   | 64                                                                                               |
+| 层布局         | `16 × [3 × Gated DeltaNet + 1 × Gated Attention]`                                                |
+| Gated DeltaNet | 48 层；16 个 Q/K head、48 个 V head；head dim 128                                                |
+| 全局注意力     | 16 层；24 个 Q head、4 个 KV head；head dim 256                                                  |
+| FFN            | 每层都有一个稠密 SwiGLU，intermediate size 17,408                                                |
+| 词表/输出行数  | 248,320，已 padding；输入与输出权重不共享                                                        |
+| 位置编码       | partial multimodal RoPE；仅旋转全局注意力每个 256 维 Q/K head 的前 64 维；DeltaNet 层不使用 RoPE |
+| 原生上下文     | 262,144 token                                                                                    |
+| 扩展上下文     | 通过 YaRN 可到 1,000,000 token                                                                   |
+| 视觉塔         | 27 层 ViT；hidden 1,152；16 heads；FFN 4,304                                                     |
+| 视觉 patch     | 时间维 2 帧，空间维 `16 × 16`；随后做 `2 × 2` spatial merge                                      |
+| MTP            | 1 层辅助预测模块，经过多步 MTP 训练                                                              |
+| 权重格式       | BF16，另有独立的官方 FP8 版本                                                                    |
+| License        | Apache-2.0                                                                                       |
 
 这里的“语言模型宽度 5,120”就是配置中的 `hidden_size=5120`。更准确地说，它是每个 token 进入模型后对应的 hidden state 维度：如果 batch size 是 $B$、序列长度是 $N$，那么 embedding 输出以及每个 Decoder block 的主残差流形状都是 `[B, N, 5120]`。这不是上下文长度，也不是词表大小；token 本身在进入 embedding 前只是一个整数 ID。
 
@@ -163,11 +163,11 @@ Qwen 没有把整个模型都换成线性注意力，而是在每个四层周期
 
 这 64 个旋转维又组成 32 个正余弦频率对，并按 `[11, 11, 10]` 切给三个多模态坐标轴：
 
-| 分区 | 表达的坐标 |
-| --- | --- |
+| 分区        | 表达的坐标     |
+| ----------- | -------------- |
 | 11 个频率对 | temporal，时间 |
-| 11 个频率对 | height，高度 |
-| 10 个频率对 | width，宽度 |
+| 11 个频率对 | height，高度   |
+| 10 个频率对 | width，宽度    |
 
 三组频率交错排列，`rope_theta` 为 10,000,000。对纯文本 token，位置仍然退化成普通的一维顺序；对图像和视频 token，同一套 attention 则能感知时间、高度和宽度。这也是视觉 token 可以与文本 token 共用语言 Decoder 的关键接口之一。
 
@@ -190,16 +190,16 @@ $$
 
 根据官方配置、实现和 `model.safetensors.index.json` 可以把参数账本进一步拆开。下表是按张量形状推算的结果，不是 Qwen 官方给出的分项统计：
 
-| 组件 | 约参数量 | 观察 |
-| --- | ---: | --- |
-| 64 个 Dense SwiGLU FFN | 17.113B | 占比最大，约占 checkpoint 的 61.6% |
-| 48 个 Gated DeltaNet mixer | 5.562B | 单层约 115.9M，并不比全局层更省参数 |
-| Input embedding + LM head | 2.543B | 两个 `248,320 × 5,120` 矩阵，且不共享 |
-| 16 个 Gated Global Attention mixer | 1.678B | 单层约 104.9M |
-| Decoder block 与 final RMSNorm | 0.00066B | `(2 × 64 + 1) × 5,120 = 660,480` |
-| 视觉塔与 merger | 0.461B | 27 层 ViT 加 5,120 维投影 |
-| MTP 辅助模块 | 0.425B | 一层 draft head |
-| **合计** | **约 27.781B** | 与权重索引中 55,562,855,904 字节的 BF16 权重对齐 |
+| 组件                               |       约参数量 | 观察                                             |
+| ---------------------------------- | -------------: | ------------------------------------------------ |
+| 64 个 Dense SwiGLU FFN             |        17.113B | 占比最大，约占 checkpoint 的 61.6%               |
+| 48 个 Gated DeltaNet mixer         |         5.562B | 单层约 115.9M，并不比全局层更省参数              |
+| Input embedding + LM head          |         2.543B | 两个 `248,320 × 5,120` 矩阵，且不共享            |
+| 16 个 Gated Global Attention mixer |         1.678B | 单层约 104.9M                                    |
+| Decoder block 与 final RMSNorm     |       0.00066B | `(2 × 64 + 1) × 5,120 = 660,480`                 |
+| 视觉塔与 merger                    |         0.461B | 27 层 ViT 加 5,120 维投影                        |
+| MTP 辅助模块                       |         0.425B | 一层 draft head                                  |
+| **合计**                           | **约 27.781B** | 与权重索引中 55,562,855,904 字节的 BF16 权重对齐 |
 
 官方 Model Card 只在 `Language Model` 项下标注 27B，并没有进一步定义模型名是否计入 MTP 与视觉塔。按张量拆分推测，语言模型主路径（不含视觉塔与 MTP）约 26.896B，可取整称为 27B；加上 MTP 后约 27.321B，再加视觉塔后，整个官方 BF16 权重包约 27.781B。Hugging Face 页面将它显示成约 28B 也不矛盾。
 

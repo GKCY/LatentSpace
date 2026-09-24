@@ -29,14 +29,14 @@ python -c "import torch; print(torch.__version__); from torch.distributed.fsdp i
 
 训练一个神经网络时，显存不只装“模型权重”。至少要考虑下面几类数据：
 
-| 类别 | 含义 | 是否一定随参数量增长 |
-|---|---|---:|
-| 参数（parameters） | 当前模型权重 | 是 |
-| 梯度（gradients） | 每个参数对应的梯度 | 是 |
-| 优化器状态（optimizer states） | 例如 Adam 的一阶矩和二阶矩 | 是 |
-| 激活（activations） | forward 为 backward 保存的中间结果 | 与 batch、序列长度、网络结构有关 |
-| 临时缓冲区 | GEMM、attention、通信、dtype 转换等临时空间 | 视算子和运行时而定 |
-| CUDA allocator 保留空间 | PyTorch 已向 CUDA 申请、但当前不一定被 tensor 使用的空间 | 视执行历史而定 |
+| 类别                           | 含义                                                     |             是否一定随参数量增长 |
+| ------------------------------ | -------------------------------------------------------- | -------------------------------: |
+| 参数（parameters）             | 当前模型权重                                             |                               是 |
+| 梯度（gradients）              | 每个参数对应的梯度                                       |                               是 |
+| 优化器状态（optimizer states） | 例如 Adam 的一阶矩和二阶矩                               |                               是 |
+| 激活（activations）            | forward 为 backward 保存的中间结果                       | 与 batch、序列长度、网络结构有关 |
+| 临时缓冲区                     | GEMM、attention、通信、dtype 转换等临时空间              |               视算子和运行时而定 |
+| CUDA allocator 保留空间        | PyTorch 已向 CUDA 申请、但当前不一定被 tensor 使用的空间 |                   视执行历史而定 |
 
 为了建立数量级直觉，先做一个**故意简化的 FP32 + Adam 账本**。设模型有 $P$ 个参数：
 
@@ -121,10 +121,10 @@ GPU 3: [A B C D]
 
 后文会频繁使用三个动词：
 
-| 术语 | 本文中的含义 |
-|---|---|
-| shard | 把完整 tensor 切开，每个 rank 只长期保存一片 |
-| unshard | 通过 all-gather 临时还原完整参数 |
+| 术语    | 本文中的含义                                       |
+| ------- | -------------------------------------------------- |
+| shard   | 把完整 tensor 切开，每个 rank 只长期保存一片       |
+| unshard | 通过 all-gather 临时还原完整参数                   |
 | reshard | 当前计算结束后释放其他 rank 的分片，重新只留本地片 |
 
 “FSDP 单元”“参数组”或“通信组”指一次 `fully_shard` 调用所管理的那批参数。它是 all-gather/reduce-scatter 的边界，不等于整个 process group；前者回答“这次传哪些参数”，后者回答“哪些 rank 一起通信”。
@@ -162,10 +162,10 @@ $$
 
 继续使用前面的 FP32 + Adam 教学账本：10 亿参数的持久模型状态约为 16 GB。若在 8 个 rank 上完整分片，理想稳定状态约为每 rank 2 GB：
 
-| 方法 | 参数/卡 | 梯度/卡 | Adam 状态/卡 | 持久模型状态/卡 |
-|---|---:|---:|---:|---:|
-| DDP | 4 GB | 4 GB | 8 GB | 16 GB |
-| FSDP 完整分片，8 ranks | 0.5 GB | 0.5 GB | 1 GB | 2 GB |
+| 方法                   | 参数/卡 | 梯度/卡 | Adam 状态/卡 | 持久模型状态/卡 |
+| ---------------------- | ------: | ------: | -----------: | --------------: |
+| DDP                    |    4 GB |    4 GB |         8 GB |           16 GB |
+| FSDP 完整分片，8 ranks |  0.5 GB |  0.5 GB |         1 GB |            2 GB |
 
 这里使用十进制 GB，并且仍然没有计算激活、当前完整参数组和临时缓冲区。因此“2 GB”是稳定模型状态的直觉，不是“2 GB 显卡就能训练 10 亿参数模型”的承诺。
 
@@ -175,13 +175,13 @@ $$
 
 PyTorch 分布式训练通常采用“一张 GPU 对应一个进程”的方式。几个词必须分清：
 
-| 名词 | 含义 | 8 卡单机示例 |
-|---|---|---:|
-| process / worker | 一个训练进程 | 共 8 个 |
-| rank | 进程在整个通信组中的全局编号 | 0～7 |
-| local rank | 进程在本机内的编号 | 0～7 |
-| world size | 通信组中的总进程数 | 8 |
-| process group | 哪些 rank 参加一组 collective | 默认是全部 8 个 |
+| 名词             | 含义                          |    8 卡单机示例 |
+| ---------------- | ----------------------------- | --------------: |
+| process / worker | 一个训练进程                  |         共 8 个 |
+| rank             | 进程在整个通信组中的全局编号  |            0～7 |
+| local rank       | 进程在本机内的编号            |            0～7 |
+| world size       | 通信组中的总进程数            |               8 |
+| process group    | 哪些 rank 参加一组 collective | 默认是全部 8 个 |
 
 两机、每机 8 卡时，`WORLD_SIZE=16`；每台机器上的 `LOCAL_RANK` 都是 0～7，但全局 `RANK` 是 0～15。
 
@@ -378,10 +378,10 @@ optimizer step:
 
 如果某个单元设置为 forward 后**不立即 reshard**，它的完整参数会一直留到 backward，从而省掉 backward 前的第二次 all-gather，但显存更高。这就是 FSDP 中反复出现的主旋钮：
 
-| 选择 | 显存 | 通信 | 常见用途 |
-|---|---:|---:|---|
-| forward 后 reshard | 更低 | backward 前多一次 all-gather | 内存优先 |
-| forward 后不 reshard | 更高 | 少一次 all-gather | 吞吐优先 |
+| 选择                 | 显存 |                         通信 | 常见用途 |
+| -------------------- | ---: | ---------------------------: | -------- |
+| forward 后 reshard   | 更低 | backward 前多一次 all-gather | 内存优先 |
+| forward 后不 reshard | 更高 |            少一次 all-gather | 吞吐优先 |
 
 FSDP2 的 `reshard_after_forward=None` 有一个有意设计的默认行为：非 root FSDP 模块按 `True` 处理，root 模块按 `False` 处理。原因是 root 剩余参数通常在 forward 末尾和 backward 开始处相邻使用，保留它们往往比较划算。
 
@@ -395,7 +395,7 @@ FSDP 省下显存的代价是参数 all-gather。以 ring collective 的粗略�
 
 FSDP 的目标首先是让更大的模型或 batch 能跑起来，不保证在模型本来就轻松放得下时比 DDP 更快。实际性能取决于层大小、网络拓扑、batch、计算强度、FSDP 分组边界和通信能否被计算覆盖。
 
- ### 5.2 一个粗略的通信量账本
+### 5.2 一个粗略的通信量账本
 
 设某个参数组有 $Q$ bytes，$N$ 是参与这次 collective 的 **rank 数量**，也就是相应 process group 的大小。对纯 FSDP，若所有 rank 都属于同一个分片组，通常有 $N=\text{WORLD\_SIZE}$；对 HSDP 或其他子组通信，$N$ 只等于当前分片组的大小，不一定等于训练使用的总 GPU 数。例如，64 张 GPU 按每 8 张组成一个 FSDP 分片组时，这里的 $N=8$，而不是 64。
 
@@ -491,13 +491,13 @@ fully_shard(model)
 
 DeepSpeed ZeRO 用 Stage 1～3 描述逐步分片模型状态：
 
-| 方案 | 参数 | 梯度 | 优化器状态 |
-|---|---|---|---|
-| DDP | 复制 | 复制 | 复制 |
-| ZeRO Stage 1 | 复制 | 复制 | 分片 |
-| ZeRO Stage 2 | 复制 | 分片 | 分片 |
-| ZeRO Stage 3 | 分片 | 分片 | 分片 |
-| FSDP 完整分片 | 分片 | 分片 | 分片 |
+| 方案          | 参数 | 梯度 | 优化器状态 |
+| ------------- | ---- | ---- | ---------- |
+| DDP           | 复制 | 复制 | 复制       |
+| ZeRO Stage 1  | 复制 | 复制 | 分片       |
+| ZeRO Stage 2  | 复制 | 分片 | 分片       |
+| ZeRO Stage 3  | 分片 | 分片 | 分片       |
+| FSDP 完整分片 | 分片 | 分片 | 分片       |
 
 所以，从“分了哪些模型状态”看，FSDP 完整分片与 ZeRO Stage 3 是同一类思想。它们的 API、内部表示、调度策略和生态实现并不完全相同，不能把两个名字机械地当成同一个软件组件。
 
@@ -762,11 +762,11 @@ MixedPrecisionPolicy(
 
 它表达的是：
 
-| 时机 | dtype | 目的 |
-|---|---|---|
-| 平时保存的参数分片、optimizer step | 参数原始 dtype，示例为 FP32 | 保留更新精度 |
-| unshard 后的参数与 forward/backward 计算 | BF16 | 降显存、提吞吐、减少 all-gather 字节数 |
-| 梯度 reduce-scatter | FP32 | 提高跨 rank 累加的数值稳健性 |
+| 时机                                     | dtype                       | 目的                                   |
+| ---------------------------------------- | --------------------------- | -------------------------------------- |
+| 平时保存的参数分片、optimizer step       | 参数原始 dtype，示例为 FP32 | 保留更新精度                           |
+| unshard 后的参数与 forward/backward 计算 | BF16                        | 降显存、提吞吐、减少 all-gather 字节数 |
+| 梯度 reduce-scatter                      | FP32                        | 提高跨 rank 累加的数值稳健性           |
 
 若 `reduce_dtype=None` 且设置了 `param_dtype`，归约通常使用计算 dtype。把它显式设为 FP32 会增加通信字节数，但可能改善数值稳定性。这不是固定答案，应以 loss、梯度范数和吞吐测量为准。
 
@@ -1017,10 +1017,10 @@ model.reset_parameters()
 
 需要区分三个 OOM 时刻：
 
-| OOM 时刻 | 最可能的问题 |
-|---|---|
-| 模型构造/加载时 | 每个进程复制完整 CPU/GPU 模型；没有使用 meta 或分片加载 |
-| 第一次 forward | FSDP 单元过大；root-only；输入/激活太大 |
+| OOM 时刻              | 最可能的问题                                                  |
+| --------------------- | ------------------------------------------------------------- |
+| 模型构造/加载时       | 每个进程复制完整 CPU/GPU 模型；没有使用 meta 或分片加载       |
+| 第一次 forward        | FSDP 单元过大；root-only；输入/激活太大                       |
 | 第一次 optimizer step | optimizer 在 shard 前创建；额外 master copy；状态首次懒初始化 |
 
 ---
@@ -1125,12 +1125,12 @@ FSDP2 默认提供 implicit prefetching。通常先从默认策略开始；只�
 
 ### 17.2 Wrap 粒度
 
-| profiler 现象 | 可能原因 | 调整方向 |
-|---|---|---|
-| 一个巨大 all-gather，GPU 随后才开始算 | 分组太粗 | 按 Transformer block 等自然单元拆分 |
-| 数百个极小 collective，GPU 频繁空转 | 分组太细 | 合并小模块 |
-| 通信基本被当前层计算覆盖 | 粒度合适 | 不要为“看起来更高级”继续改 |
-| 峰值显存来自同时驻留多个 full unit | 预取过深或不 reshard | 减少预取、启用 reshard |
+| profiler 现象                         | 可能原因             | 调整方向                            |
+| ------------------------------------- | -------------------- | ----------------------------------- |
+| 一个巨大 all-gather，GPU 随后才开始算 | 分组太粗             | 按 Transformer block 等自然单元拆分 |
+| 数百个极小 collective，GPU 频繁空转   | 分组太细             | 合并小模块                          |
+| 通信基本被当前层计算覆盖              | 粒度合适             | 不要为“看起来更高级”继续改          |
+| 峰值显存来自同时驻留多个 full unit    | 预取过深或不 reshard | 减少预取、启用 reshard              |
 
 ### 17.3 Batch 与算术强度
 
@@ -1174,14 +1174,14 @@ reserved = torch.cuda.max_memory_reserved() / 1024**3
 
 先按发生阶段判断，而不是盲目减 batch：
 
-| 发生位置 | 先检查什么 |
-|---|---|
-| 初始化/加载 | 是否每个 rank 都创建或读取完整模型；是否可用 meta + DCP |
-| forward 开头 | 是否只 shard root；单个通信组是否太大 |
-| forward 中后段 | activation 是否主导；序列长度与 attention 内存 |
-| backward | activation + full 参数 + gradient buffer 是否叠峰；是否预取过多 |
-| optimizer 第一步 | optimizer 是否在 shard 前创建；状态是否此时才懒初始化 |
-| 保存 checkpoint | 是否在每个 rank materialize 完整 state dict |
+| 发生位置         | 先检查什么                                                      |
+| ---------------- | --------------------------------------------------------------- |
+| 初始化/加载      | 是否每个 rank 都创建或读取完整模型；是否可用 meta + DCP         |
+| forward 开头     | 是否只 shard root；单个通信组是否太大                           |
+| forward 中后段   | activation 是否主导；序列长度与 attention 内存                  |
+| backward         | activation + full 参数 + gradient buffer 是否叠峰；是否预取过多 |
+| optimizer 第一步 | optimizer 是否在 shard 前创建；状态是否此时才懒初始化           |
+| 保存 checkpoint  | 是否在每个 rank materialize 完整 state dict                     |
 
 一个特别有效的诊断是临时缩短序列长度：
 
@@ -1269,19 +1269,19 @@ model = FSDP(
 
 看到它不用慌。核心原理仍然是参数 all-gather 和梯度 reduce-scatter，只是 API 与参数表示不同。
 
-| FSDP1 | FSDP2 | 含义 |
-|---|---|---|
-| `FSDP(module)` wrapper | `fully_shard(module)` 原地组合 | 应用 FSDP |
-| `auto_wrap_policy` | 用户按模块 bottom-up 调 `fully_shard` | 定义通信组边界 |
-| `FlatParameter` | per-parameter `DTensor` | 分片参数表示 |
-| `ShardingStrategy.FULL_SHARD` | `reshard_after_forward=True` | forward 后重新分片 |
-| `ShardingStrategy.SHARD_GRAD_OP` | `reshard_after_forward=False` | 保留 full 参数到 backward |
-| `HYBRID_SHARD` | 二维 `DeviceMesh` + reshard | HSDP |
-| `MixedPrecision` | `MixedPrecisionPolicy` | 混合精度策略 |
-| `no_sync()` | `set_requires_gradient_sync(False)` | 梯度累积时关闭同步 |
-| `CPUOffload` | `CPUOffloadPolicy` | CPU 卸载 |
-| `use_orig_params` | 始终保留原参数语义 | FSDP2 不再暴露 flat param 给用户 |
-| FSDP state-dict 类型/context | DTensor + DCP state-dict API | checkpoint |
+| FSDP1                            | FSDP2                                 | 含义                             |
+| -------------------------------- | ------------------------------------- | -------------------------------- |
+| `FSDP(module)` wrapper           | `fully_shard(module)` 原地组合        | 应用 FSDP                        |
+| `auto_wrap_policy`               | 用户按模块 bottom-up 调 `fully_shard` | 定义通信组边界                   |
+| `FlatParameter`                  | per-parameter `DTensor`               | 分片参数表示                     |
+| `ShardingStrategy.FULL_SHARD`    | `reshard_after_forward=True`          | forward 后重新分片               |
+| `ShardingStrategy.SHARD_GRAD_OP` | `reshard_after_forward=False`         | 保留 full 参数到 backward        |
+| `HYBRID_SHARD`                   | 二维 `DeviceMesh` + reshard           | HSDP                             |
+| `MixedPrecision`                 | `MixedPrecisionPolicy`                | 混合精度策略                     |
+| `no_sync()`                      | `set_requires_gradient_sync(False)`   | 梯度累积时关闭同步               |
+| `CPUOffload`                     | `CPUOffloadPolicy`                    | CPU 卸载                         |
+| `use_orig_params`                | 始终保留原参数语义                    | FSDP2 不再暴露 flat param 给用户 |
+| FSDP state-dict 类型/context     | DTensor + DCP state-dict API          | checkpoint                       |
 
 FSDP1 的 `NO_SHARD` 接近 DDP；`FULL_SHARD` 对应 ZeRO-3 类完整分片；`SHARD_GRAD_OP` 在计算间隙分片参数，但 forward 后暂时保留完整参数，以更多显存换少一次 all-gather。
 
@@ -1332,15 +1332,15 @@ FSDP 计算当前单元时仍要临时还原它。单层本身放不下时需要
 
 ## 21. 什么时候应该选 FSDP？
 
-| 场景 | 首选思路 |
-|---|---|
-| 模型和目标 batch 能轻松放进单卡，只想提吞吐 | DDP，通常更简单且可能更快 |
-| 模型状态放不进单卡，但最大单层可以放下 | FSDP2 |
-| 参数能放下，但长序列激活 OOM | 先看 activation checkpointing、attention 实现、batch/sequence |
-| 单个大层或算子都放不下 | TP，常与 FSDP 组合 |
-| 跨节点纯 FSDP 通信太重，机内互联很快 | HSDP 或 TP + FSDP |
-| GPU 显存仍不足，能接受明显吞吐损失 | CPU offload |
-| 超大模型且需要深度切分 | 评估 PP + TP + FSDP 的多维并行 |
+| 场景                                        | 首选思路                                                      |
+| ------------------------------------------- | ------------------------------------------------------------- |
+| 模型和目标 batch 能轻松放进单卡，只想提吞吐 | DDP，通常更简单且可能更快                                     |
+| 模型状态放不进单卡，但最大单层可以放下      | FSDP2                                                         |
+| 参数能放下，但长序列激活 OOM                | 先看 activation checkpointing、attention 实现、batch/sequence |
+| 单个大层或算子都放不下                      | TP，常与 FSDP 组合                                            |
+| 跨节点纯 FSDP 通信太重，机内互联很快        | HSDP 或 TP + FSDP                                             |
+| GPU 显存仍不足，能接受明显吞吐损失          | CPU offload                                                   |
+| 超大模型且需要深度切分                      | 评估 PP + TP + FSDP 的多维并行                                |
 
 一个实用决策路径是：
 

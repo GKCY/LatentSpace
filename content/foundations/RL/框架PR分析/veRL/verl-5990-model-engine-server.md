@@ -131,13 +131,13 @@ pop engine_server_logprobs from batch
 
 当前实现可以拆成几个角色：
 
-| 类 | 角色 |
-|---|---|
+| 类                         | 角色                                                                       |
+| -------------------------- | -------------------------------------------------------------------------- |
 | `ModelEngineServerManager` | 管理 old/ref 两类 `ModelEngineReplica`，对上提供统一的 `compute_log_probs` |
-| `ModelEngineReplica` | 类似 rollout replica，负责资源分配、生命周期和权重同步 |
-| `ModelEngineWorker` | 每张 GPU 上的 Ray actor，继承 checkpoint engine worker 逻辑 |
-| `ModelEngineServerAdapter` | 把 `TrainingWorker` 包成 forward-only inference adapter |
-| `ModelEngineServer` | 对外服务的 Ray actor，负责异步 batching、排队、pause/resume |
+| `ModelEngineReplica`       | 类似 rollout replica，负责资源分配、生命周期和权重同步                     |
+| `ModelEngineWorker`        | 每张 GPU 上的 Ray actor，继承 checkpoint engine worker 逻辑                |
+| `ModelEngineServerAdapter` | 把 `TrainingWorker` 包成 forward-only inference adapter                    |
+| `ModelEngineServer`        | 对外服务的 Ray actor，负责异步 batching、排队、pause/resume                |
 
 这个设计复用了 verl 已有的 `RolloutReplica`、`BaseRollout`、`CheckpointEngineWorker` 架构。它不是另起一套完整 serving 系统，而是把“旧策略 logprob 推理”伪装成一种特殊 rollout/inference replica。
 
@@ -288,9 +288,9 @@ GPU 数量放大倍数是：
 
 这里重要的不是执着于 `1.31x` 还是 `1.09x`，而是理解它们在回答不同问题：
 
-| 指标 | 回答的问题 |
-|---|---|
-| wall-clock speedup | 训练多久跑完？ |
+| 指标                        | 回答的问题                             |
+| --------------------------- | -------------------------------------- |
+| wall-clock speedup          | 训练多久跑完？                         |
 | resource-normalized speedup | 算上多用的卡，整体资源效率有没有变好？ |
 
 ---
@@ -343,11 +343,11 @@ GPU 数量放大倍数是：
 
 尤其需要关注三个指标：
 
-| 指标 | 含义 |
-|---|---|
-| `timing_s/old_log_prob` 减少量 | 训练关键路径真正缩短了多少 |
-| `timing_s/gen` 增加量 | rollout 侧被 logprob server 拖慢了多少 |
-| logprob GPU utilization / batch fill ratio | 额外资源是否被有效使用 |
+| 指标                                       | 含义                                   |
+| ------------------------------------------ | -------------------------------------- |
+| `timing_s/old_log_prob` 减少量             | 训练关键路径真正缩短了多少             |
+| `timing_s/gen` 增加量                      | rollout 侧被 logprob server 拖慢了多少 |
+| logprob GPU utilization / batch fill ratio | 额外资源是否被有效使用                 |
 
 如果 `timing_s/old_log_prob` 减少很多，但 logprob GPU 利用率很低，这个方案仍然可能适合抢时间；如果资源归一化收益接近 1 或低于 1，就说明它主要是在堆卡换时间。
 

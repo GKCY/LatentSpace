@@ -16,15 +16,15 @@
 
 可以把它理解成一个 single-controller trainer。它在本地 driver 上维护训练状态、dataloader、global step、metrics 和 checkpoint 节奏，然后通过 RPC 调用不同 worker group：
 
-| 角色 | 负责内容 |
-|---|---|
-| `actor_rollout_wg` | actor 训练、生成 old logprob、给 rollout replica 提供最新权重 |
-| `critic_wg` | value model 推理和 critic update |
-| `ref_policy_wg` | reference policy logprob，或者由 actor 去掉 LoRA adapter 代替 |
-| `reward_loop_manager` | reward model / reward function 相关计算 |
-| `llm_server_manager` | 管理 rollout serving replicas |
-| `async_rollout_manager` | 面向 trainer 的 rollout / agent loop 入口 |
-| `checkpoint_manager` | 负责训练权重和 rollout replicas 之间的同步、sleep/wake |
+| 角色                    | 负责内容                                                      |
+| ----------------------- | ------------------------------------------------------------- |
+| `actor_rollout_wg`      | actor 训练、生成 old logprob、给 rollout replica 提供最新权重 |
+| `critic_wg`             | value model 推理和 critic update                              |
+| `ref_policy_wg`         | reference policy logprob，或者由 actor 去掉 LoRA adapter 代替 |
+| `reward_loop_manager`   | reward model / reward function 相关计算                       |
+| `llm_server_manager`    | 管理 rollout serving replicas                                 |
+| `async_rollout_manager` | 面向 trainer 的 rollout / agent loop 入口                     |
+| `checkpoint_manager`    | 负责训练权重和 rollout replicas 之间的同步、sleep/wake        |
 
 所以阅读这个文件时，不要期待在里面看到所有模型细节。它真正有价值的地方是：
 
@@ -123,11 +123,11 @@ self.total_training_steps = len(self.train_dataloader) * total_epochs
 
 可以粗略分成三层：
 
-| 字段 | 放什么 |
-|---|---|
-| `batch` | tensor，例如 `prompts`、`responses`、`attention_mask`、`old_log_probs`、`values` |
-| `non_tensor_batch` | 非 tensor 信息，例如 `uid`、`data_source`、`reward_model`、多模态输入 |
-| `meta_info` | 控制信息，例如 temperature、global step、是否 validate、timing |
+| 字段               | 放什么                                                                           |
+| ------------------ | -------------------------------------------------------------------------------- |
+| `batch`            | tensor，例如 `prompts`、`responses`、`attention_mask`、`old_log_probs`、`values` |
+| `non_tensor_batch` | 非 tensor 信息，例如 `uid`、`data_source`、`reward_model`、多模态输入            |
+| `meta_info`        | 控制信息，例如 temperature、global step、是否 validate、timing                   |
 
 训练循环里常见操作包括：
 
@@ -303,16 +303,16 @@ checkpoint_manager.update_weights
 
 这段代码的关键不是某一个函数，而是顺序。PPO 需要的一些字段必须按依赖关系逐步补齐：
 
-| 阶段 | 新增字段 |
-|---|---|
-| rollout | `responses`、`attention_mask`、可能还有 `rollout_log_probs` |
-| reward | `rm_scores` 或 reward extra info |
-| extract reward | `token_level_scores` |
-| old logprob | `old_log_probs` |
-| ref policy | `ref_log_prob` |
-| critic | `values` |
-| KL penalty | `token_level_rewards` |
-| advantage | `advantages`、`returns` |
+| 阶段           | 新增字段                                                    |
+| -------------- | ----------------------------------------------------------- |
+| rollout        | `responses`、`attention_mask`、可能还有 `rollout_log_probs` |
+| reward         | `rm_scores` 或 reward extra info                            |
+| extract reward | `token_level_scores`                                        |
+| old logprob    | `old_log_probs`                                             |
+| ref policy     | `ref_log_prob`                                              |
+| critic         | `values`                                                    |
+| KL penalty     | `token_level_rewards`                                       |
+| advantage      | `advantages`、`returns`                                     |
 
 最后 actor 和 critic worker 才能用这个完整 batch 做 update。
 
@@ -541,13 +541,13 @@ batch = compute_advantage(
 
 `compute_advantage` 支持多种 estimator：
 
-| estimator | 依赖 |
-|---|---|
-| GAE | `token_level_rewards`、`values`、`response_mask` |
-| GRPO | `token_level_rewards`、`uid` 分组、`response_mask` |
-| REMAX | 额外的 `reward_baselines` |
-| GDPO | reward extra info / non-tensor batch |
-| optimal token baseline | `sum_pi_squared`、`old_log_probs` |
+| estimator              | 依赖                                               |
+| ---------------------- | -------------------------------------------------- |
+| GAE                    | `token_level_rewards`、`values`、`response_mask`   |
+| GRPO                   | `token_level_rewards`、`uid` 分组、`response_mask` |
+| REMAX                  | 额外的 `reward_baselines`                          |
+| GDPO                   | reward extra info / non-tensor batch               |
+| optimal token baseline | `sum_pi_squared`、`old_log_probs`                  |
 
 这里有一个设计点：
 

@@ -10,22 +10,26 @@
 ## 1. 核心问题
 
 当前 Agent 系统（如 SWE-Agent、OpenHands）由**松散耦合**的组件构成：
+
 - LLM 推理引擎（vLLM / SGLang）
 - 工具编排器（Kubernetes）
 
 每个 LLM 调用和工具调用被当作**独立的无状态请求**单独调度，导致三个核心问题：
 
 ### 1.1 KV Cache Thrashing
+
 - Tool 执行期间，KV Cache 被清出以容纳新请求
 - Tool 返回后需重新 Prefill 完整历史，延迟增加 **up to 7.14×**
 - 吞吐量随并发数增加而严重下降
 
 ### 1.2 跨节点内存不均衡
+
 - 现有策略将同一 Workflow 的请求固定到同一 GPU 节点
 - 不同 Workflow 的 KV 足迹差异巨大，导致节点间内存不均衡
 - 实测峰值不平衡达 **51%**，部分节点过载而其他节点空闲
 
 ### 1.3 工具生命周期管理缺失
+
 - 已完成 Workflow 的 Docker 镜像等资源未被回收
 - 磁盘占用持续线性增长直至系统崩溃
 - 工具环境准备时间随并发数增加急剧增长
@@ -38,14 +42,14 @@
 
 $$P = \langle ID, c, \mathcal{T}, \mathcal{L}, \tau, s \rangle$$
 
-| 字段                                     | 含义                         |
-| -------------------------------------- | -------------------------- |
-| $ID$                                   | 全局唯一标识符                    |
-| $c$                                    | 上下文 token 数（KV Cache 内存占用） |
-| $\mathcal{T}$                          | 工具环境集合（Docker 沙箱、网络端口等）    |
-| $\mathcal{L}$                          | 后端 GPU 节点位置                |
-| $\tau \in \{R, A\}$                    | 执行阶段：Reasoning / Acting    |
-| $s \in \{Active, Paused, Terminated\}$ | 调度状态                       |
+| 字段                                   | 含义                                    |
+| -------------------------------------- | --------------------------------------- |
+| $ID$                                   | 全局唯一标识符                          |
+| $c$                                    | 上下文 token 数（KV Cache 内存占用）    |
+| $\mathcal{T}$                          | 工具环境集合（Docker 沙箱、网络端口等） |
+| $\mathcal{L}$                          | 后端 GPU 节点位置                       |
+| $\tau \in \{R, A\}$                    | 执行阶段：Reasoning / Acting            |
+| $s \in \{Active, Paused, Terminated\}$ | 调度状态                                |
 
 **关键洞察**：Program 抽象让调度器第一次拥有端到端视角，看清每个 Workflow 的完整资源需求和所处阶段。
 
@@ -61,11 +65,11 @@ $$\text{Cost}_x = \int_0^{t_x} M_x(t) \, dt$$
 
 $$\text{Cost}_{total} \approx \underbrace{\text{Cost}_{decode} + \text{Cost}_{prefill}}_{\text{有效工作}} + \underbrace{\text{Cost}_{recompute} + \text{Cost}_{unused} + \text{Cost}_{caching}}_{\text{浪费开销}}$$
 
-| 成本项 | 来源 |
-|--------|------|
+| 成本项                    | 来源                              |
+| ------------------------- | --------------------------------- |
 | $\text{Cost}_{recompute}$ | KV Cache Thrashing 导致的重新计算 |
-| $\text{Cost}_{unused}$ | 跨节点内存不均衡导致的空闲 |
-| $\text{Cost}_{caching}$ | Tool 执行期间 KV Cache 的空等 |
+| $\text{Cost}_{unused}$    | 跨节点内存不均衡导致的空闲        |
+| $\text{Cost}_{caching}$   | Tool 执行期间 KV Cache 的空等     |
 
 ---
 
@@ -121,11 +125,13 @@ $$C_{total} < \sum_{p \in \mathcal{L}, \tau=R} c_p + \sum_{q \in \mathcal{L}, \t
 ## 5. 工具资源管理
 
 ### 5.1 Hook-based 垃圾回收
+
 - Program 终止时自动触发 teardown
 - 回收 Docker 沙箱、网络端口、计算槽位
 - 有效维持磁盘内存在常数水平
 
 ### 5.2 异步环境准备
+
 - 在高优先级程序即将恢复前，异步初始化工具环境
 - 将环境准备时间隐藏在调度中，显著降低端到端延迟
 
@@ -135,7 +141,7 @@ $$C_{total} < \sum_{p \in \mathcal{L}, \tau=R} c_p + \sum_{q \in \mathcal{L}, \t
 
 ### 6.1 Serving 吞吐量和 KV Cache 命中率
 
-| 配置                                | 对比系统      | 吞吐量提升      |
+| 配置                              | 对比系统  | 吞吐量提升 |
 | --------------------------------- | --------- | ---------- |
 | GLM-4.6 / Qwen-3 + SWE-Bench-Lite | vLLM      | 1.48–3.58× |
 | GLM-4.6 / Qwen-3 + SWE-Bench-Lite | Continuum | 1.17–3.31× |
@@ -144,10 +150,10 @@ ThunderAgent 在高并发下维持稳定吞吐量，KV Cache 命中率达到 ~10
 
 ### 6.2 RL Rollout
 
-| Workflow | 对比系统 | 吞吐量 |
-|----------|---------|-------|
+| Workflow      | 对比系统       | 吞吐量        |
+| ------------- | -------------- | ------------- |
 | mini-SWEAgent | vLLM + Gateway | 671.8 (1.79×) |
-| OpenHands | vLLM + Gateway | 270.8 (3.92×) |
+| OpenHands     | vLLM + Gateway | 270.8 (3.92×) |
 
 ### 6.3 资源节省
 
@@ -158,12 +164,12 @@ ThunderAgent 在高并发下维持稳定吞吐量，KV Cache 命中率达到 ~10
 
 ## 7. 与现有系统的比较
 
-| 系统 | 问题 |
-|------|------|
-| vLLM (Request-aware) | 无 Program 感知，高并发下 Thrashing 严重 |
-| Continuum | TTL 机制无法应对不可预测的工具执行时间，仍会触发 Thrashing |
-| Autellix | 无 Workflow 局部性，高并发下互相驱逐 KV Cache |
-| SGLang Model Gateway | 前缀感知路由导致负载集中到单一节点 |
+| 系统                 | 问题                                                       |
+| -------------------- | ---------------------------------------------------------- |
+| vLLM (Request-aware) | 无 Program 感知，高并发下 Thrashing 严重                   |
+| Continuum            | TTL 机制无法应对不可预测的工具执行时间，仍会触发 Thrashing |
+| Autellix             | 无 Workflow 局部性，高并发下互相驱逐 KV Cache              |
+| SGLang Model Gateway | 前缀感知路由导致负载集中到单一节点                         |
 
 ThunderAgent 的优势在于**程序级抽象 + 端到端协调**。
 

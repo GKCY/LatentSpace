@@ -395,9 +395,9 @@ P3 | R3
 
 这两个概念需要严格区分：
 
-| 层次 | 判断依据 | 发生阶段 | 解决的问题 |
-|---|---|---|---|
-| Message tree 分叉 | role + 完整 message dict | `record_turn()` | turn 属于哪条对话路径 |
+| 层次               | 判断依据                       | 发生阶段           | 解决的问题                 |
+| ------------------ | ------------------------------ | ------------------ | -------------------------- |
+| Message tree 分叉  | role + 完整 message dict       | `record_turn()`    | turn 属于哪条对话路径      |
 | Token segment 分叉 | `prompt_ids` 的 token 前缀关系 | `get_trajectory()` | token 能否作为连续 RL 序列 |
 
 因此：

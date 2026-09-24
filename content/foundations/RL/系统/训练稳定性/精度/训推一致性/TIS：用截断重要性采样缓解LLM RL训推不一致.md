@@ -56,10 +56,10 @@ $$
 取 $C=2$，可以看到不同权重的处理方式：
 
 | 行为概率 $\mu(a)$ | 目标概率 $\pi_{\mathrm{target}}(a)$ | 原始权重 $w$ | TIS 权重 $\bar w$ |
-| ---: | ---: | ---: | ---: |
-| 0.20 | 0.30 | 1.50 | 1.50 |
-| 0.0001 | 0.005 | 50.00 | 2.00 |
-| 0.20 | 0.002 | 0.01 | 0.01 |
+| ----------------: | ----------------------------------: | -----------: | ----------------: |
+|              0.20 |                                0.30 |         1.50 |              1.50 |
+|            0.0001 |                               0.005 |        50.00 |              2.00 |
+|              0.20 |                               0.002 |         0.01 |              0.01 |
 
 精确概率比在满足支持集等条件时能给出无偏的 IS 估计，但可能具有很高的方差。固定上限会改变这种加权，引入偏差，同时抑制极端权重的影响。增大 $C$ 会接近普通 IS；减小 $C$ 会让更多样本触发截断，但不保证训练一定更好。
 
@@ -77,11 +77,11 @@ TIS 原本是通用统计方法，参见 Ionides 的 [Truncated Importance Sampl
 
 几种规则作用于同一个原始权重 $w$ 时，含义并不相同。假设上限为 2、额外下限为 0.5：
 
-| 规则 | 权重函数 | $w=0.01$ 时 | $w=3$ 时 |
-| --- | --- | ---: | ---: |
-| 单侧 TIS | $\min(w,2)$ | 0.01 | 2 |
-| 双侧 clamp | $\operatorname{clip}(w,0.5,2)$ | 0.5 | 2 |
-| 双侧 mask | $w\,\mathbf 1\{0.5\le w\le2\}$ | 0 | 0 |
+| 规则       | 权重函数                       | $w=0.01$ 时 | $w=3$ 时 |
+| ---------- | ------------------------------ | ----------: | -------: |
+| 单侧 TIS   | $\min(w,2)$                    |        0.01 |        2 |
+| 双侧 clamp | $\operatorname{clip}(w,0.5,2)$ |         0.5 |        2 |
+| 双侧 mask  | $w\,\mathbf 1\{0.5\le w\le2\}$ |           0 |        0 |
 
 双侧 clamp 把小权重抬高，会增加这些样本相对于普通 IS 的贡献，引入额外的加权偏差。双侧 mask 则丢弃区间外的策略损失贡献，常见于 MIS（Masked Importance Sampling）和 IcePop 一类方法。
 
@@ -93,11 +93,11 @@ TIS 原本是通用统计方法，参见 Ionides 的 [Truncated Importance Sampl
 
 进入 PPO/GRPO 的实现后，需要区分三个角色。下面所有概率都对应同一个前缀和同一个 token：
 
-| 符号 | 概率来源 | 更新同一批数据时的角色 |
-| --- | --- | --- |
-| $\mu$ | 实际 rollout 行为策略 | 固定的采样来源 |
-| $q$ | 选定的训练侧旧策略评分 | 使用解耦形式时，作为固定的 PPO 参照 |
-| $p_\theta$ | 当前训练策略的 forward | 随参数更新，参与反向传播 |
+| 符号       | 概率来源               | 更新同一批数据时的角色              |
+| ---------- | ---------------------- | ----------------------------------- |
+| $\mu$      | 实际 rollout 行为策略  | 固定的采样来源                      |
+| $q$        | 选定的训练侧旧策略评分 | 使用解耦形式时，作为固定的 PPO 参照 |
+| $p_\theta$ | 当前训练策略的 forward | 随参数更新，参与反向传播            |
 
 在同步同权重场景中，$q$ 与 $\mu$ 对应同一份权重在两个引擎上的结果；异步场景中还可能存在版本差异。旧概率怎样获得和缓存，留到第 5 节讨论。
 
@@ -111,11 +111,11 @@ $A$ 是已经计算好的 advantage。GRPO 常用组内相对奖励构造它，�
 
 用 $\operatorname{sg}$ 表示停止梯度，省略聚合、KL 和 mask 后，三种常见损失形式是：
 
-| 形式 | 单项损失 | TIS 使用什么比率 |
-| --- | --- | --- |
-| 解耦 PPO + TIS | $-\min(q/\mu,C)S(p_\theta/q,A)$ | 旧训练／rollout |
-| 直接以 rollout 为参照的 PPO | $-S(p_\theta/\mu,A)$ | 这条基本路径没有独立的 TIS 权重 |
-| 当前策略的 IS 加权策略梯度 | $-\operatorname{sg}[\min(p_\theta/\mu,C)]A\log p_\theta$ | 当前训练／rollout |
+| 形式                        | 单项损失                                                 | TIS 使用什么比率                |
+| --------------------------- | -------------------------------------------------------- | ------------------------------- |
+| 解耦 PPO + TIS              | $-\min(q/\mu,C)S(p_\theta/q,A)$                          | 旧训练／rollout                 |
+| 直接以 rollout 为参照的 PPO | $-S(p_\theta/\mu,A)$                                     | 这条基本路径没有独立的 TIS 权重 |
+| 当前策略的 IS 加权策略梯度  | $-\operatorname{sg}[\min(p_\theta/\mu,C)]A\log p_\theta$ | 当前训练／rollout               |
 
 **“PPO clipping 外再乘 TIS”描述的是第一种形式。** 它不能概括所有名为 PPO/GRPO 或 rollout correction 的配置。[verl 的数学说明](https://verl.readthedocs.io/en/latest/algo/rollout_corr_math.html)分别讨论了这些路径。
 
@@ -207,10 +207,10 @@ $$
 
 无论 PPO 的分母选 $q$ 还是 $\mu$，其 clipping 都需要与外层 $\min$ 一起理解：
 
-| Advantage | $S(r,A)$ 对 $r$ 进入平坦分支的条件 | 另一侧越界时 |
-| --- | --- | --- |
-| $A>0$ | $r>1+\epsilon$ | $r<1-\epsilon$ 时仍保留 $rA$ |
-| $A<0$ | $r<1-\epsilon$ | $r>1+\epsilon$ 时仍保留 $rA$ |
+| Advantage | $S(r,A)$ 对 $r$ 进入平坦分支的条件 | 另一侧越界时                 |
+| --------- | ---------------------------------- | ---------------------------- |
+| $A>0$     | $r>1+\epsilon$                     | $r<1-\epsilon$ 时仍保留 $rA$ |
+| $A<0$     | $r<1-\epsilon$                     | $r>1+\epsilon$ 时仍保留 $rA$ |
 
 例如，$r=0.5$、$\epsilon=0.2$ 时，$A=1$ 给出 $S=\min(0.5,0.8)=0.5$；$A=-1$ 给出 $S=\min(-0.5,-0.8)=-0.8$。后一种情况下，这个局部代理项对 $r$ 的直接梯度为零，前一种仍有梯度。PPO 由此抑制继续朝 advantage 有利方向过度改变概率所能获得的代理收益，并不保证参数或概率变化被硬性限制在区间内。[PPO 原论文](https://arxiv.org/abs/1707.06347)
 
@@ -334,11 +334,11 @@ TRL 的 loss 也有缺少旧评分时的 `detach()` 回退，但正常启用 vLL
 
 下面对照已经核对的源码快照；完整调用链和配置入口见附录 B。
 
-| 框架快照 | 概率与 loss 的处理 | 开关和默认值 |
-| --- | --- | --- |
-| verl `753aed3` | 解耦路径缓存 `old / rollout`；bypass 的 `ppo_clip` 使用 `current / rollout`；bypass 的 `reinforce` 每次 loss 按 `current / rollout` 计算停止梯度的 IS 权重 | YAML 默认 `rollout_is=null`、`bypass_mode=false`，IS 校正没有开启 |
-| slime `4c193f1` | TIS 使用训练侧旧评分，满足单次更新条件时可复用当前 forward；`--use-rollout-logprobs` 则直接把 rollout 评分作为 PPO 分母 | `--use-rollout-logprobs` 与 `--use-tis` 互斥；vanilla TIS 默认下限 0、上限 2 |
-| TRL `a04ffd3`（2026-09-14） | vLLM correction 在准备 batch 时重算并缓存旧评分与校正权重，后续使用 `current / old` 的代理项 | correction 默认开启，但模式为 `sequence_mask`，上限 3、下限 `None` |
+| 框架快照                    | 概率与 loss 的处理                                                                                                                                         | 开关和默认值                                                                 |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| verl `753aed3`              | 解耦路径缓存 `old / rollout`；bypass 的 `ppo_clip` 使用 `current / rollout`；bypass 的 `reinforce` 每次 loss 按 `current / rollout` 计算停止梯度的 IS 权重 | YAML 默认 `rollout_is=null`、`bypass_mode=false`，IS 校正没有开启            |
+| slime `4c193f1`             | TIS 使用训练侧旧评分，满足单次更新条件时可复用当前 forward；`--use-rollout-logprobs` 则直接把 rollout 评分作为 PPO 分母                                    | `--use-rollout-logprobs` 与 `--use-tis` 互斥；vanilla TIS 默认下限 0、上限 2 |
+| TRL `a04ffd3`（2026-09-14） | vLLM correction 在准备 batch 时重算并缓存旧评分与校正权重，后续使用 `current / old` 的代理项                                                               | correction 默认开启，但模式为 `sequence_mask`，上限 3、下限 `None`           |
 
 verl 的 bypass 还要求 actor 进入 `policy_loss.loss_mode=bypass_mode` 分支。其中 `ppo_clip` 明确不再乘独立 IS 权重；`reinforce` 则把校正权重乘到 $-A\log p_\theta$ 上。它把当前 `log_prob` 传给名为 `old_log_prob` 的形参，也说明形参名并不能代替调用链。[verl 的 bypass 分支](https://github.com/verl-project/verl/blob/753aed3e1c286ba6825a74342b28669e72c083ea/verl/trainer/ppo/core_algos.py#L2491-L2541)
 
@@ -371,12 +371,12 @@ verl 的 bypass 还要求 actor 进入 `policy_loss.loss_mode=bypass_mode` 分�
 
 建议将以下指标放在一起观察：
 
-| 观察对象 | 记录内容 | 帮助判断什么 |
-| --- | --- | --- |
-| 原始概率比 | $w$ 与 $\log w$ 的分布、尾部分位数、极值 | 分布差异是否在扩大 |
+| 观察对象     | 记录内容                                  | 帮助判断什么             |
+| ------------ | ----------------------------------------- | ------------------------ |
+| 原始概率比   | $w$ 与 $\log w$ 的分布、尾部分位数、极值  | 分布差异是否在扩大       |
 | 处理后的权重 | 上截断率、上下界分别越界的比例、mask 比例 | 多少训练信号被改变或丢弃 |
-| 有效样本量 | 截断或 mask 前后的经验 ESS | 权重是否集中在少量样本上 |
-| 训练表现 | gradient norm、reward、entropy、回答长度 | 权重变化是否伴随训练异常 |
+| 有效样本量   | 截断或 mask 前后的经验 ESS                | 权重是否集中在少量样本上 |
+| 训练表现     | gradient norm、reward、entropy、回答长度  | 权重变化是否伴随训练异常 |
 
 经验性的归一化有效样本量指标可写成：
 
@@ -450,32 +450,32 @@ $$
 
 ### verl：`753aed3e1c286ba6825a74342b28669e72c083ea`
 
-| 入口 | 核对内容 |
-| --- | --- |
-| [Trainer 的 batch 预校正](https://github.com/verl-project/verl/blob/753aed3e1c286ba6825a74342b28669e72c083ea/verl/trainer/ppo/v1/trainer_base.py#L1703-L1715) | 解耦路径基于旧训练评分与 rollout 评分生成 batch 校正权重 |
-| [Actor 的 loss 选路](https://github.com/verl-project/verl/blob/753aed3e1c286ba6825a74342b28669e72c083ea/verl/workers/utils/losses.py#L95-L111) | `policy_loss.loss_mode` 如何进入 bypass 分支 |
-| [Bypass 比率与两个 loss 分支](https://github.com/verl-project/verl/blob/753aed3e1c286ba6825a74342b28669e72c083ea/verl/trainer/ppo/core_algos.py#L2491-L2541) | `ppo_clip` 直接使用 `current / rollout`，不再乘独立 IS；`reinforce` 按当前概率计算停止梯度的校正权重 |
-| [Rollout correction 默认配置](https://github.com/verl-project/verl/blob/753aed3e1c286ba6825a74342b28669e72c083ea/verl/trainer/config/algorithm/rollout_correction.yaml#L5-L28) | 默认 `rollout_is=null`、`bypass_mode=false`；阈值存在不表示 IS 已启用 |
+| 入口                                                                                                                                                                           | 核对内容                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| [Trainer 的 batch 预校正](https://github.com/verl-project/verl/blob/753aed3e1c286ba6825a74342b28669e72c083ea/verl/trainer/ppo/v1/trainer_base.py#L1703-L1715)                  | 解耦路径基于旧训练评分与 rollout 评分生成 batch 校正权重                                             |
+| [Actor 的 loss 选路](https://github.com/verl-project/verl/blob/753aed3e1c286ba6825a74342b28669e72c083ea/verl/workers/utils/losses.py#L95-L111)                                 | `policy_loss.loss_mode` 如何进入 bypass 分支                                                         |
+| [Bypass 比率与两个 loss 分支](https://github.com/verl-project/verl/blob/753aed3e1c286ba6825a74342b28669e72c083ea/verl/trainer/ppo/core_algos.py#L2491-L2541)                   | `ppo_clip` 直接使用 `current / rollout`，不再乘独立 IS；`reinforce` 按当前概率计算停止梯度的校正权重 |
+| [Rollout correction 默认配置](https://github.com/verl-project/verl/blob/753aed3e1c286ba6825a74342b28669e72c083ea/verl/trainer/config/algorithm/rollout_correction.yaml#L5-L28) | 默认 `rollout_is=null`、`bypass_mode=false`；阈值存在不表示 IS 已启用                                |
 
 ### slime：`4c193f1f37509cca70f0e88807a9305b70f63f4e`
 
-| 入口 | 核对内容 |
-| --- | --- |
-| [Megatron 后端省略旧评分的条件](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/backends/megatron_utils/actor.py#L427-L454) | 一个 optimizer step 及其他条件如何决定是否额外执行旧策略评分 |
-| [Loss 的分母选择与 detach 回退](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/backends/megatron_utils/loss.py#L963-L988) | rollout 评分与训练侧旧评分的选择；缺少训练侧旧评分时复用当前评分的 `detach()` |
-| [直接 rollout 分母与 TIS 的互斥检查](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/utils/arguments.py#L1860-L1861) | `--use-rollout-logprobs` 与 `--use-tis` 不能同时开启 |
-| [TIS 的默认阈值](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/utils/arguments.py#L1073-L1089) | vanilla TIS 默认下限 0、上限 2；正下限需要另行配置 |
+| 入口                                                                                                                                                           | 核对内容                                                                      |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [Megatron 后端省略旧评分的条件](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/backends/megatron_utils/actor.py#L427-L454) | 一个 optimizer step 及其他条件如何决定是否额外执行旧策略评分                  |
+| [Loss 的分母选择与 detach 回退](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/backends/megatron_utils/loss.py#L963-L988)  | rollout 评分与训练侧旧评分的选择；缺少训练侧旧评分时复用当前评分的 `detach()` |
+| [直接 rollout 分母与 TIS 的互斥检查](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/utils/arguments.py#L1860-L1861)        | `--use-rollout-logprobs` 与 `--use-tis` 不能同时开启                          |
+| [TIS 的默认阈值](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/slime/utils/arguments.py#L1073-L1089)                            | vanilla TIS 默认下限 0、上限 2；正下限需要另行配置                            |
 
 ### TRL：`a04ffd337108285002df29d9ae73ef7e855e03f1`（2026-09-14）
 
-| 入口 | 核对内容 |
-| --- | --- |
-| [准备输入与 batch 复用](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_trainer.py#L1593-L1605) | 按 `steps_per_generation * num_iterations` 的周期生成、保存并复用 batch |
-| [旧评分、校正比率与截断或 mask](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_trainer.py#L2656-L2707) | vLLM correction 开启时强制重算旧训练评分，在 `no_grad` 下计算校正权重；链接区间包含 truncate 分支，mask 分支紧随其后 |
-| [保存评分与校正权重](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_trainer.py#L2931-L2936) | 旧评分、校正权重和采样评分一起写入 batch |
-| [旧评分回退、PPO 比率与裁剪目标](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_trainer.py#L3153-L3213) | 缺少旧评分时才使用 `current.detach()`；常规比率为 `current / old` |
-| [在策略损失上应用校正](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_trainer.py#L3239-L3240) | 使用 batch 中缓存的校正权重 |
-| [校正模式与默认阈值](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_config.py#L920-L957) | correction 默认开启，模式 `sequence_mask`，上限 3、下限 `None`；truncate 模式与下限单独配置 |
+| 入口                                                                                                                                                       | 核对内容                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| [准备输入与 batch 复用](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_trainer.py#L1593-L1605)          | 按 `steps_per_generation * num_iterations` 的周期生成、保存并复用 batch                                              |
+| [旧评分、校正比率与截断或 mask](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_trainer.py#L2656-L2707)  | vLLM correction 开启时强制重算旧训练评分，在 `no_grad` 下计算校正权重；链接区间包含 truncate 分支，mask 分支紧随其后 |
+| [保存评分与校正权重](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_trainer.py#L2931-L2936)             | 旧评分、校正权重和采样评分一起写入 batch                                                                             |
+| [旧评分回退、PPO 比率与裁剪目标](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_trainer.py#L3153-L3213) | 缺少旧评分时才使用 `current.detach()`；常规比率为 `current / old`                                                    |
+| [在策略损失上应用校正](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_trainer.py#L3239-L3240)           | 使用 batch 中缓存的校正权重                                                                                          |
+| [校正模式与默认阈值](https://github.com/huggingface/trl/blob/a04ffd337108285002df29d9ae73ef7e855e03f1/trl/trainer/grpo_config.py#L920-L957)                | correction 默认开启，模式 `sequence_mask`，上限 3、下限 `None`；truncate 模式与下限单独配置                          |
 
 ## 参考资料
 
