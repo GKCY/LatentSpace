@@ -1,5 +1,6 @@
 @use "./variables.scss" as *;
 @use "../components/styles/mobileTableOfContents.scss";
+@use "../components/styles/leftSidebar.scss";
 
 // Keep dense technical material comfortable and independently scrollable.
 article p,

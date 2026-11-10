@@ -1,0 +1,64 @@
+@use "../../styles/variables.scss" as *;
+
+.left-sidebar-toggle {
+  display: none;
+}
+
+@media all and not ($mobile) {
+  .left-sidebar-toggle {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    z-index: 50;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 40px;
+    padding: 0.45rem 0.65rem;
+    border: 1px solid var(--lightgray);
+    border-radius: 0.5rem;
+    background: var(--light);
+    color: var(--darkgray);
+    font: 500 0.8rem/1 var(--bodyFont);
+    cursor: pointer;
+  }
+
+  .left-sidebar-toggle:hover,
+  .left-sidebar-toggle:focus-visible {
+    background: var(--highlight);
+    color: var(--secondary);
+  }
+
+  :root[data-left-sidebar-collapsed="true"] {
+    .left-sidebar-toggle-arrow {
+      transform: rotate(180deg);
+      transform-origin: 14.5px 12px;
+    }
+
+    .page[data-frame="default"] {
+      // Preserve the article's comfortable line length after removing a column.
+      max-width: calc(1500px - #{$sidePanelWidth});
+
+      & > #quartz-body {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+          "grid-header"
+          "grid-center"
+          "grid-sidebar-right"
+          "grid-footer";
+
+        & > .sidebar.left {
+          display: none;
+        }
+
+        @media all and ($desktop) {
+          grid-template-columns: minmax(0, 1fr) #{$sidePanelWidth};
+          grid-template-areas:
+            "grid-header grid-sidebar-right"
+            "grid-center grid-sidebar-right"
+            "grid-footer grid-sidebar-right";
+        }
+      }
+    }
+  }
+}

@@ -1,9 +1,11 @@
 import { PageFrame, PageFrameProps } from "./types"
 import HeaderConstructor from "../Header"
 import MobileTableOfContentsConstructor from "../MobileTableOfContents"
+import LeftSidebarToggleConstructor from "../LeftSidebarToggle"
 
 const Header = HeaderConstructor()
 const MobileTableOfContents = MobileTableOfContentsConstructor()
+const LeftSidebarToggle = LeftSidebarToggleConstructor()
 
 /**
  * The default page frame — three-column layout with left sidebar, center
@@ -13,7 +15,7 @@ const MobileTableOfContents = MobileTableOfContentsConstructor()
  */
 export const DefaultFrame: PageFrame = {
   name: "default",
-  components: [MobileTableOfContents],
+  components: [MobileTableOfContents, LeftSidebarToggle],
   render({
     componentData,
     header,
@@ -26,7 +28,8 @@ export const DefaultFrame: PageFrame = {
   }: PageFrameProps) {
     return (
       <>
-        <div class="left sidebar">
+        {left.length > 0 && <LeftSidebarToggle {...componentData} />}
+        <div class="left sidebar" id="left-sidebar">
           {left.map((BodyComponent) => (
             <BodyComponent {...componentData} />
           ))}
